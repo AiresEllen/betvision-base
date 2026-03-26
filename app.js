@@ -102,7 +102,7 @@ const demoMatches = [
 const SUPABASE_URL = window.APP_CONFIG?.SUPABASE_URL || "";
 const SUPABASE_ANON_KEY = window.APP_CONFIG?.SUPABASE_ANON_KEY || "";
 
-const supabase =
+const sbClient =
   window.supabase && SUPABASE_URL && SUPABASE_ANON_KEY
     ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
     : null;
@@ -157,7 +157,10 @@ function setMode(mode) {
 function showScreen(logged) {
   loginScreen.classList.toggle("active", !logged);
   dashboardScreen.classList.toggle("active", logged);
-  if (logged) renderDashboard();
+
+  if (logged) {
+    renderDashboard();
+  }
 }
 
 function getFilteredMatches() {
@@ -169,7 +172,9 @@ function getFilteredMatches() {
 
     const text =
       `${match.home} ${match.away} ${match.league} ${match.market}`.toLowerCase();
+
     const searchOk = text.includes(state.search.toLowerCase());
+
     return filterOk && searchOk;
   });
 }
@@ -281,7 +286,7 @@ function renderDashboard() {
 }
 
 async function loginWithSupabase(email, password) {
-  if (!supabase) {
+  if (!sbClient) {
     setMessage(
       "Supabase não configurado. Preencha o arquivo config.js ou entre em modo demo.",
       "error",
@@ -289,7 +294,7 @@ async function loginWithSupabase(email, password) {
     return;
   }
 
-  const { error } = await supabase.auth.signInWithPassword({
+  const { error } = await sbClient.auth.signInWithPassword({
     email,
     password,
   });
@@ -305,7 +310,7 @@ async function loginWithSupabase(email, password) {
 }
 
 async function signUpWithSupabase(email, password) {
-  if (!supabase) {
+  if (!sbClient) {
     setMessage(
       "Supabase não configurado. Preencha o arquivo config.js antes de criar conta.",
       "error",
@@ -313,7 +318,7 @@ async function signUpWithSupabase(email, password) {
     return;
   }
 
-  const { error } = await supabase.auth.signUp({
+  const { error } = await sbClient.auth.signUp({
     email,
     password,
   });
@@ -329,8 +334,8 @@ async function signUpWithSupabase(email, password) {
 }
 
 async function logoutSupabaseIfNeeded() {
-  if (supabase) {
-    await supabase.auth.signOut();
+  if (sbClient) {
+    await sbClient.auth.signOut();
   }
 }
 
@@ -388,7 +393,7 @@ searchInput.addEventListener("input", (event) => {
 });
 
 async function bootstrapAuth() {
-  if (!supabase) {
+  if (!sbClient) {
     setMode("demo");
     showScreen(isLoggedIn());
     return;
@@ -396,7 +401,7 @@ async function bootstrapAuth() {
 
   const {
     data: { session },
-  } = await supabase.auth.getSession();
+  } = await sbClient.auth.getSession();
 
   if (session?.user) {
     setMode("supabase");
