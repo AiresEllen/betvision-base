@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bet Vision Premium</title>
+  <meta name="description" content="Dashboard premium de análise de partidas de futebol" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <section id="loginScreen" class="screen active">
+      <div class="login-shell">
+        <div class="brand-panel glass">
+          <span class="eyebrow">PLATAFORMA PREMIUM</span>
+          <h1>Seu painel profissional de partidas e tendências.</h1>
+          <p>
+            Um projeto base pronto para você usar, adaptar, vender e publicar no Netlify.
+          </p>
+          <div class="hero-stats">
+            <div>
+              <strong>+25</strong>
+              <span>Ligas simuladas</span>
+            </div>
+            <div>
+              <strong>100%</strong>
+              <span>Responsivo</span>
+            </div>
+            <div>
+              <strong>Demo</strong>
+              <span>Pronto para testar</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="login-card glass">
+          <div class="login-header">
+            <div class="logo">BV</div>
+            <div>
+              <h2>Entrar no painel</h2>
+              <p>Use o modo demo para acessar agora.</p>
+            </div>
+          </div>
+
+          <form id="loginForm" class="login-form">
+            <label>
+              <span>E-mail</span>
+              <input type="email" id="email" placeholder="seunome@email.com" value="demo@betvision.app" />
+            </label>
+            <label>
+              <span>Senha</span>
+              <input type="password" id="password" placeholder="••••••••" value="123456" />
+            </label>
+            <button type="submit" class="btn btn-primary">Entrar</button>
+            <button type="button" id="demoLogin" class="btn btn-secondary">Entrar em modo demo</button>
+          </form>
+
+          <div class="login-note">
+            <span class="status-dot"></span>
+            Projeto base pronto para personalização e publicação.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="dashboardScreen" class="screen">
+      <div class="dashboard-layout">
+        <aside class="sidebar glass">
+          <div>
+            <div class="sidebar-brand">
+              <div class="logo">BV</div>
+              <div>
+                <strong>Bet Vision</strong>
+                <small>Premium Demo</small>
+              </div>
+            </div>
+
+            <nav class="sidebar-nav">
+              <button class="nav-item active">Visão geral</button>
+              <button class="nav-item">Partidas</button>
+              <button class="nav-item">Tendências</button>
+              <button class="nav-item">Favoritos</button>
+              <button class="nav-item">Configurações</button>
+            </nav>
+          </div>
+
+          <button id="logoutBtn" class="btn btn-secondary full">Sair</button>
+        </aside>
+
+        <main class="content-area">
+          <header class="topbar glass">
+            <div>
+              <span class="eyebrow">PAINEL DO DIA</span>
+              <h2>Análises e partidas em destaque</h2>
+            </div>
+            <div class="topbar-actions">
+              <button class="chip active" data-filter="today">Hoje</button>
+              <button class="chip" data-filter="tomorrow">Amanhã</button>
+              <button class="chip" data-filter="week">Semana</button>
+            </div>
+          </header>
+
+          <section class="stats-grid">
+            <article class="stat-card glass">
+              <span>Partidas hoje</span>
+              <strong id="matchesCount">0</strong>
+              <small>Atualizado em demo</small>
+            </article>
+            <article class="stat-card glass">
+              <span>Maior confiança</span>
+              <strong id="bestConfidence">0%</strong>
+              <small>Com base na análise</small>
+            </article>
+            <article class="stat-card glass">
+              <span>Média de gols</span>
+              <strong id="goalsAverage">0.0</strong>
+              <small>Entre os jogos filtrados</small>
+            </article>
+            <article class="stat-card glass highlight-card">
+              <span>Modo atual</span>
+              <strong>Demo Premium</strong>
+              <small>Pronto para integrar API real</small>
+            </article>
+          </section>
+
+          <section class="featured-panel glass">
+            <div>
+              <span class="eyebrow">DESTAQUE</span>
+              <h3 id="featuredTitle">Carregando...</h3>
+              <p id="featuredDescription">Aguarde enquanto montamos sua melhor oportunidade do dia.</p>
+            </div>
+            <div class="featured-badge">
+              <span>Confiança</span>
+              <strong id="featuredConfidence">0%</strong>
+            </div>
+          </section>
+
+          <section>
+            <div class="section-title-row">
+              <div>
+                <span class="eyebrow">LISTA DE JOGOS</span>
+                <h3>Partidas analisadas</h3>
+              </div>
+              <input id="searchInput" class="search-input" type="text" placeholder="Buscar time, liga ou mercado..." />
+            </div>
+
+            <div id="matchesGrid" class="matches-grid"></div>
+          </section>
+        </main>
+      </div>
+    </section>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
