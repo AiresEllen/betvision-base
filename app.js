@@ -1,5 +1,6 @@
 const demoMatches = [
   {
+    id: "demo-1",
     period: "today",
     league: "Brasileirão Série A",
     market: "BTTS Sim",
@@ -14,6 +15,7 @@ const demoMatches = [
     bttsRate: "71%",
   },
   {
+    id: "demo-2",
     period: "today",
     league: "Champions League",
     market: "Mais de 2.5 gols",
@@ -28,6 +30,7 @@ const demoMatches = [
     bttsRate: "68%",
   },
   {
+    id: "demo-3",
     period: "tomorrow",
     league: "Premier League",
     market: "Mais de 8.5 escanteios",
@@ -65,6 +68,7 @@ const state = {
   loadingMatches: false,
   currentSection: "overview",
   favorites: JSON.parse(localStorage.getItem("bv_favorites") || "[]"),
+  selectedMatchId: null,
 };
 
 const loginScreen = document.getElementById("loginScreen");
@@ -81,6 +85,10 @@ const modeLabel = document.getElementById("modeLabel");
 const modeCardLabel = document.getElementById("modeCardLabel");
 const modeCardDescription = document.getElementById("modeCardDescription");
 const sidebarButtons = document.querySelectorAll(".sidebar-nav .nav-item");
+
+const statsGrid = document.querySelector(".stats-grid");
+const featuredPanel = document.querySelector(".featured-panel");
+const sectionTitleRow = document.querySelector(".section-title-row");
 
 function setMessage(text, type = "default") {
   loginMessage.innerHTML = `<span class="status-dot"></span>${text}`;
@@ -177,6 +185,19 @@ function calculateConfidence(homeGoals, awayGoals, homeForm, awayForm) {
   const formFactor = ((homeForm || 0) + (awayForm || 0)) * 4;
   const raw = 52 + goalsFactor * 0.35 + formFactor;
   return Math.max(58, Math.min(92, Math.round(raw)));
+}
+
+function buildRecommendation(match) {
+  if (match.confidence >= 88) {
+    return "Entrada forte para acompanhar. A confiança está em nível muito alto dentro da leitura atual.";
+  }
+  if (match.confidence >= 78) {
+    return "Boa oportunidade. Vale monitorar escalações e últimos ajustes antes da entrada.";
+  }
+  if (match.confidence >= 68) {
+    return "Leitura interessante, mas pede gestão mais conservadora.";
+  }
+  return "Jogo mais sensível. Ideal acompanhar ao vivo ou evitar exposição maior.";
 }
 
 function getPeriodFromFilter(filter) {
@@ -277,8 +298,12 @@ async function refreshMatches() {
   }
 }
 
+function getAllMatches() {
+  return state.matches.length ? state.matches : demoMatches;
+}
+
 function getFilteredMatches() {
-  const source = state.matches.length ? state.matches : demoMatches;
+  const source = getAllMatches();
 
   return source.filter((match) => {
     const filterOk =
@@ -301,8 +326,14 @@ function getTrendMatches() {
 }
 
 function getFavoriteMatches() {
-  const all = state.matches.length ? state.matches : demoMatches;
+  const all = getAllMatches();
   return all.filter((match) => state.favorites.includes(match.id));
+}
+
+function getSelectedMatch() {
+  return (
+    getAllMatches().find((match) => match.id === state.selectedMatchId) || null
+  );
 }
 
 function renderStats(matches) {
@@ -348,11 +379,30 @@ function toggleFavorite(matchId) {
   renderDashboard();
 }
 
+window.toggleFavorite = toggleFavorite;
+
+function openMatchDetails(matchId) {
+  state.selectedMatchId = matchId;
+  renderDashboard();
+}
+
+function backToDashboard() {
+  state.selectedMatchId = null;
+  renderDashboard();
+}
+
+window.openMatchDetails = openMatchDetails;
+window.backToDashboard = backToDashboard;
+
 function createMatchCard(match, compact = false) {
   const isFavorite = state.favorites.includes(match.id);
 
   return `
-    <article class="match-card">
+    <article
+      class="match-card"
+      onclick="openMatchDetails('${match.id}')"
+      style="cursor:pointer;"
+    >
       <div class="match-top">
         <span class="league-pill">${match.league}</span>
         <span class="market-pill">${match.market}</span>
@@ -401,9 +451,9 @@ function createMatchCard(match, compact = false) {
       </div>
 
       <div style="margin-top:14px; display:flex; justify-content:${compact ? "flex-end" : "space-between"}; align-items:center; gap:10px;">
-        ${compact ? "" : `<small style="color:#8fa6d8;">${match.trend}</small>`}
+        ${compact ? "" : `<small style="color:#8fa6d8;">Clique para abrir a análise completa</small>`}
         <button
-          onclick="toggleFavorite('${match.id}')"
+          onclick="event.stopPropagation(); toggleFavorite('${match.id}')"
           style="
             border:none;
             border-radius:12px;
@@ -421,12 +471,141 @@ function createMatchCard(match, compact = false) {
   `;
 }
 
-window.toggleFavorite = toggleFavorite;
+function renderMatchDetails(match) {
+  if (!match) {
+    matchesGrid.innerHTML = `
+      <div class="empty-state">
+        <h3>Partida não encontrada</h3>
+        <p>Volte para o painel e selecione outro jogo.</p>
+      </div>
+    `;
+    return;
+  }
+
+  const isFavorite = state.favorites.includes(match.id);
+
+  document.getElementById("featuredTitle").textContent =
+    `${match.home} x ${match.away}`;
+  document.getElementById("featuredDescription").textContent =
+    "Tela profissional de análise detalhada da partida.";
+  document.getElementById("featuredConfidence").textContent =
+    `${match.confidence}%`;
+
+  matchesGrid.innerHTML = `
+    <section style="
+      display:flex;
+      flex-direction:column;
+      gap:22px;
+      background:rgba(10,19,41,0.75);
+      border:1px solid rgba(115,145,255,0.14);
+      border-radius:28px;
+      padding:24px;
+      box-shadow:0 25px 60px rgba(0,0,0,0.28);
+    ">
+      <div style="display:flex; justify-content:space-between; gap:14px; align-items:center; flex-wrap:wrap;">
+        <div>
+          <div style="font-size:12px; text-transform:uppercase; letter-spacing:0.12em; color:#66c7ff; font-weight:800;">Análise detalhada</div>
+          <h2 style="margin:8px 0 6px; font-size:34px; line-height:1.1;">${match.home} x ${match.away}</h2>
+          <p style="margin:0; color:#9bb0d9;">${match.league} • ${match.time} • ${match.stadium}</p>
+        </div>
+
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <button
+            onclick="backToDashboard()"
+            style="
+              border:none;
+              border-radius:14px;
+              padding:12px 16px;
+              cursor:pointer;
+              background:rgba(255,255,255,0.08);
+              color:#fff;
+              font-weight:700;
+            "
+          >
+            ← Voltar ao painel
+          </button>
+
+          <button
+            onclick="toggleFavorite('${match.id}')"
+            style="
+              border:none;
+              border-radius:14px;
+              padding:12px 16px;
+              cursor:pointer;
+              background:${isFavorite ? "linear-gradient(135deg,#5db0ff,#7c6dff)" : "rgba(255,255,255,0.08)"};
+              color:#fff;
+              font-weight:700;
+            "
+          >
+            ${isFavorite ? "★ Remover favorito" : "☆ Salvar favorito"}
+          </button>
+        </div>
+      </div>
+
+      <div style="
+        display:grid;
+        grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+        gap:14px;
+      ">
+        <div style="padding:18px; border-radius:20px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.06);">
+          <div style="color:#8ea4cf; font-size:13px;">Mercado sugerido</div>
+          <div style="font-size:24px; font-weight:800; margin-top:8px;">${match.market}</div>
+        </div>
+
+        <div style="padding:18px; border-radius:20px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.06);">
+          <div style="color:#8ea4cf; font-size:13px;">Confiança</div>
+          <div style="font-size:24px; font-weight:800; margin-top:8px;">${match.confidence}%</div>
+        </div>
+
+        <div style="padding:18px; border-radius:20px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.06);">
+          <div style="color:#8ea4cf; font-size:13px;">Média de gols</div>
+          <div style="font-size:24px; font-weight:800; margin-top:8px;">${match.goalsAvg}</div>
+        </div>
+
+        <div style="padding:18px; border-radius:20px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.06);">
+          <div style="color:#8ea4cf; font-size:13px;">Escanteios</div>
+          <div style="font-size:24px; font-weight:800; margin-top:8px;">${match.cornersAvg}</div>
+        </div>
+
+        <div style="padding:18px; border-radius:20px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.06);">
+          <div style="color:#8ea4cf; font-size:13px;">BTTS</div>
+          <div style="font-size:24px; font-weight:800; margin-top:8px;">${match.bttsRate}</div>
+        </div>
+      </div>
+
+      <div style="
+        display:grid;
+        grid-template-columns:1.25fr 0.95fr;
+        gap:18px;
+      " class="detail-grid-responsive">
+        <div style="padding:22px; border-radius:22px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.06);">
+          <div style="font-size:12px; text-transform:uppercase; letter-spacing:0.12em; color:#66c7ff; font-weight:800;">Leitura do jogo</div>
+          <h3 style="margin:12px 0 10px; font-size:24px;">Tendência principal</h3>
+          <p style="margin:0; color:#c7d4ef; line-height:1.7;">${match.trend}</p>
+
+          <div style="margin-top:18px;">
+            <div style="font-size:12px; text-transform:uppercase; letter-spacing:0.12em; color:#66c7ff; font-weight:800;">Recomendação</div>
+            <p style="margin:12px 0 0; color:#c7d4ef; line-height:1.7;">${buildRecommendation(match)}</p>
+          </div>
+        </div>
+
+        <div style="padding:22px; border-radius:22px; background:linear-gradient(135deg, rgba(77,150,255,0.16), rgba(124,109,255,0.16)); border:1px solid rgba(122,145,255,0.18);">
+          <div style="font-size:12px; text-transform:uppercase; letter-spacing:0.12em; color:#b7d7ff; font-weight:800;">Resumo executivo</div>
+          <ul style="margin:14px 0 0; padding-left:18px; color:#dbe7ff; line-height:1.9;">
+            <li><strong>Liga:</strong> ${match.league}</li>
+            <li><strong>Horário:</strong> ${match.time}</li>
+            <li><strong>Estádio:</strong> ${match.stadium}</li>
+            <li><strong>Mercado:</strong> ${match.market}</li>
+            <li><strong>Confiança:</strong> ${match.confidence}%</li>
+            <li><strong>Status:</strong> ${state.usingLiveApi ? "Dados vindos da API" : "Dados em modo demo"}</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+  `;
+}
 
 function renderOverview(matches) {
-  renderStats(matches);
-  renderFeatured(matches);
-
   if (state.loadingMatches) {
     matchesGrid.innerHTML = `
       <div class="empty-state">
@@ -548,12 +727,30 @@ function updateSidebarActive() {
   });
 }
 
-function renderDashboard() {
-  const matches = getFilteredMatches();
+function setDashboardLayoutForDetails(isDetail) {
+  if (statsGrid) statsGrid.style.display = isDetail ? "none" : "";
+  if (sectionTitleRow) sectionTitleRow.style.display = isDetail ? "none" : "";
+  if (searchInput) searchInput.value = isDetail ? state.search : state.search;
 
+  if (featuredPanel) {
+    featuredPanel.style.marginBottom = isDetail ? "18px" : "";
+  }
+}
+
+function renderDashboard() {
+  updateSidebarActive();
+
+  if (state.selectedMatchId) {
+    setDashboardLayoutForDetails(true);
+    renderMatchDetails(getSelectedMatch());
+    return;
+  }
+
+  setDashboardLayoutForDetails(false);
+
+  const matches = getFilteredMatches();
   renderStats(matches);
   renderFeatured(matches);
-  updateSidebarActive();
 
   if (state.currentSection === "overview") {
     renderOverview(matches);
@@ -577,7 +774,6 @@ function renderDashboard() {
 
   if (state.currentSection === "settings") {
     renderConfiguracoes();
-    return;
   }
 }
 
@@ -670,6 +866,7 @@ demoLogin.addEventListener("click", async () => {
 
 logoutBtn.addEventListener("click", async () => {
   setLoggedIn(false);
+  state.selectedMatchId = null;
   await logoutSupabaseIfNeeded();
   showScreen(false);
 });
@@ -679,6 +876,7 @@ filterButtons.forEach((button) => {
     filterButtons.forEach((item) => item.classList.remove("active"));
     button.classList.add("active");
     state.filter = button.dataset.filter;
+    state.selectedMatchId = null;
 
     await refreshMatches();
     renderDashboard();
@@ -688,6 +886,7 @@ filterButtons.forEach((button) => {
 sidebarButtons.forEach((button) => {
   button.addEventListener("click", () => {
     const label = button.textContent.trim().toLowerCase();
+    state.selectedMatchId = null;
 
     if (label.includes("visão")) state.currentSection = "overview";
     else if (label.includes("partidas")) state.currentSection = "matches";
