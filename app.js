@@ -85,7 +85,6 @@ const modeLabel = document.getElementById("modeLabel");
 const modeCardLabel = document.getElementById("modeCardLabel");
 const modeCardDescription = document.getElementById("modeCardDescription");
 const sidebarButtons = document.querySelectorAll(".sidebar-nav .nav-item");
-
 const statsGrid = document.querySelector(".stats-grid");
 const featuredPanel = document.querySelector(".featured-panel");
 const sectionTitleRow = document.querySelector(".section-title-row");
@@ -189,15 +188,67 @@ function calculateConfidence(homeGoals, awayGoals, homeForm, awayForm) {
 
 function buildRecommendation(match) {
   if (match.confidence >= 88) {
-    return "Entrada forte para acompanhar. A confiança está em nível muito alto dentro da leitura atual.";
+    return "Entrada forte para acompanhar. A leitura atual aponta cenário muito favorável dentro do mercado sugerido.";
   }
   if (match.confidence >= 78) {
-    return "Boa oportunidade. Vale monitorar escalações e últimos ajustes antes da entrada.";
+    return "Boa oportunidade. Vale acompanhar confirmação final e contexto do jogo antes da entrada.";
   }
   if (match.confidence >= 68) {
-    return "Leitura interessante, mas pede gestão mais conservadora.";
+    return "Leitura interessante, mas pede gestão de risco mais conservadora e atenção ao pré-jogo.";
   }
-  return "Jogo mais sensível. Ideal acompanhar ao vivo ou evitar exposição maior.";
+  return "Cenário mais sensível. Ideal operar com mais cautela ou observar ao vivo antes de decidir.";
+}
+
+function getRiskLevel(confidence) {
+  if (confidence >= 86) return "Baixo";
+  if (confidence >= 74) return "Moderado";
+  return "Elevado";
+}
+
+function getRiskDescription(confidence) {
+  if (confidence >= 86) {
+    return "O cenário atual mostra boa sustentação estatística para a leitura proposta.";
+  }
+  if (confidence >= 74) {
+    return "Existe valor, mas com alguns pontos que merecem confirmação antes da entrada.";
+  }
+  return "A análise sugere mais oscilação e necessidade de confirmação extra.";
+}
+
+function getWatchPoints(match) {
+  const points = [];
+
+  if (match.goalsAvg >= 2.8) {
+    points.push(
+      "Volume ofensivo acima da média, com boa chance de jogo aberto.",
+    );
+  } else {
+    points.push(
+      "Produção ofensiva mais controlada, o que pode reduzir o ritmo em alguns momentos.",
+    );
+  }
+
+  if (parseFloat(match.bttsRate) >= 65) {
+    points.push(
+      "Ambos marcam aparece como cenário plausível dentro da tendência atual.",
+    );
+  } else {
+    points.push(
+      "Há sinais de jogo menos bilateral, com risco de domínio maior de um lado.",
+    );
+  }
+
+  if (match.cornersAvg >= 9.5) {
+    points.push(
+      "Boa expectativa de pressão territorial e geração de escanteios.",
+    );
+  } else {
+    points.push(
+      "Escanteios podem ficar mais dependentes do contexto do jogo e da postura dos times.",
+    );
+  }
+
+  return points;
 }
 
 function getPeriodFromFilter(filter) {
@@ -394,7 +445,7 @@ function backToDashboard() {
 window.openMatchDetails = openMatchDetails;
 window.backToDashboard = backToDashboard;
 
-function createMatchCard(match, compact = false) {
+function createMatchCard(match) {
   const isFavorite = state.favorites.includes(match.id);
 
   return `
@@ -450,8 +501,8 @@ function createMatchCard(match, compact = false) {
         </div>
       </div>
 
-      <div style="margin-top:14px; display:flex; justify-content:${compact ? "flex-end" : "space-between"}; align-items:center; gap:10px;">
-        ${compact ? "" : `<small style="color:#8fa6d8;">Clique para abrir a análise completa</small>`}
+      <div style="margin-top:14px; display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
+        <small style="color:#8fa6d8;">Clique para abrir a análise completa</small>
         <button
           onclick="event.stopPropagation(); toggleFavorite('${match.id}')"
           style="
@@ -483,11 +534,15 @@ function renderMatchDetails(match) {
   }
 
   const isFavorite = state.favorites.includes(match.id);
+  const riskLevel = getRiskLevel(match.confidence);
+  const riskDescription = getRiskDescription(match.confidence);
+  const watchPoints = getWatchPoints(match);
+  const recommendation = buildRecommendation(match);
 
   document.getElementById("featuredTitle").textContent =
     `${match.home} x ${match.away}`;
   document.getElementById("featuredDescription").textContent =
-    "Tela profissional de análise detalhada da partida.";
+    "Tela premium de análise detalhada da partida.";
   document.getElementById("featuredConfidence").textContent =
     `${match.confidence}%`;
 
@@ -495,110 +550,154 @@ function renderMatchDetails(match) {
     <section style="
       display:flex;
       flex-direction:column;
-      gap:22px;
-      background:rgba(10,19,41,0.75);
-      border:1px solid rgba(115,145,255,0.14);
-      border-radius:28px;
-      padding:24px;
-      box-shadow:0 25px 60px rgba(0,0,0,0.28);
+      gap:20px;
     ">
-      <div style="display:flex; justify-content:space-between; gap:14px; align-items:center; flex-wrap:wrap;">
-        <div>
-          <div style="font-size:12px; text-transform:uppercase; letter-spacing:0.12em; color:#66c7ff; font-weight:800;">Análise detalhada</div>
-          <h2 style="margin:8px 0 6px; font-size:34px; line-height:1.1;">${match.home} x ${match.away}</h2>
-          <p style="margin:0; color:#9bb0d9;">${match.league} • ${match.time} • ${match.stadium}</p>
-        </div>
+      <div style="
+        background:rgba(10,24,46,0.92);
+        border:1px solid rgba(126,147,255,0.14);
+        border-radius:28px;
+        padding:24px;
+        box-shadow:0 24px 60px rgba(0,0,0,0.28);
+      ">
+        <div style="display:flex; justify-content:space-between; gap:18px; align-items:flex-start; flex-wrap:wrap;">
+          <div style="min-width:0;">
+            <div style="font-size:12px; text-transform:uppercase; letter-spacing:0.12em; color:#66c7ff; font-weight:800;">Análise detalhada</div>
+            <h2 style="margin:10px 0 8px; font-size:clamp(30px,4vw,52px); line-height:1.05; word-break:break-word;">${match.home} x ${match.away}</h2>
+            <p style="margin:0; color:#a7b8da; font-size:18px; line-height:1.5;">${match.league} • ${match.time} • ${match.stadium}</p>
+          </div>
 
-        <div style="display:flex; gap:10px; flex-wrap:wrap;">
-          <button
-            onclick="backToDashboard()"
-            style="
-              border:none;
-              border-radius:14px;
-              padding:12px 16px;
-              cursor:pointer;
-              background:rgba(255,255,255,0.08);
-              color:#fff;
-              font-weight:700;
-            "
-          >
-            ← Voltar ao painel
-          </button>
+          <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <button
+              onclick="backToDashboard()"
+              style="
+                border:none;
+                border-radius:16px;
+                padding:13px 18px;
+                cursor:pointer;
+                background:rgba(255,255,255,0.08);
+                color:#fff;
+                font-weight:700;
+              "
+            >
+              ← Voltar ao painel
+            </button>
 
-          <button
-            onclick="toggleFavorite('${match.id}')"
-            style="
-              border:none;
-              border-radius:14px;
-              padding:12px 16px;
-              cursor:pointer;
-              background:${isFavorite ? "linear-gradient(135deg,#5db0ff,#7c6dff)" : "rgba(255,255,255,0.08)"};
-              color:#fff;
-              font-weight:700;
-            "
-          >
-            ${isFavorite ? "★ Remover favorito" : "☆ Salvar favorito"}
-          </button>
+            <button
+              onclick="toggleFavorite('${match.id}')"
+              style="
+                border:none;
+                border-radius:16px;
+                padding:13px 18px;
+                cursor:pointer;
+                background:${isFavorite ? "linear-gradient(135deg,#5db0ff,#7c6dff)" : "rgba(255,255,255,0.08)"};
+                color:#fff;
+                font-weight:700;
+              "
+            >
+              ${isFavorite ? "★ Favorito salvo" : "☆ Salvar favorito"}
+            </button>
+          </div>
         </div>
       </div>
 
       <div style="
         display:grid;
         grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
-        gap:14px;
+        gap:16px;
       ">
-        <div style="padding:18px; border-radius:20px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.06);">
+        <div style="padding:20px; border-radius:22px; background:rgba(16,29,56,0.9); border:1px solid rgba(126,147,255,0.12);">
           <div style="color:#8ea4cf; font-size:13px;">Mercado sugerido</div>
-          <div style="font-size:24px; font-weight:800; margin-top:8px;">${match.market}</div>
+          <div style="font-size:24px; font-weight:800; margin-top:10px; line-height:1.2;">${match.market}</div>
         </div>
 
-        <div style="padding:18px; border-radius:20px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.06);">
+        <div style="padding:20px; border-radius:22px; background:rgba(16,29,56,0.9); border:1px solid rgba(126,147,255,0.12);">
           <div style="color:#8ea4cf; font-size:13px;">Confiança</div>
-          <div style="font-size:24px; font-weight:800; margin-top:8px;">${match.confidence}%</div>
+          <div style="font-size:24px; font-weight:800; margin-top:10px;">${match.confidence}%</div>
         </div>
 
-        <div style="padding:18px; border-radius:20px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.06);">
+        <div style="padding:20px; border-radius:22px; background:rgba(16,29,56,0.9); border:1px solid rgba(126,147,255,0.12);">
+          <div style="color:#8ea4cf; font-size:13px;">Risco</div>
+          <div style="font-size:24px; font-weight:800; margin-top:10px;">${riskLevel}</div>
+        </div>
+
+        <div style="padding:20px; border-radius:22px; background:rgba(16,29,56,0.9); border:1px solid rgba(126,147,255,0.12);">
           <div style="color:#8ea4cf; font-size:13px;">Média de gols</div>
-          <div style="font-size:24px; font-weight:800; margin-top:8px;">${match.goalsAvg}</div>
+          <div style="font-size:24px; font-weight:800; margin-top:10px;">${match.goalsAvg}</div>
         </div>
 
-        <div style="padding:18px; border-radius:20px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.06);">
+        <div style="padding:20px; border-radius:22px; background:rgba(16,29,56,0.9); border:1px solid rgba(126,147,255,0.12);">
           <div style="color:#8ea4cf; font-size:13px;">Escanteios</div>
-          <div style="font-size:24px; font-weight:800; margin-top:8px;">${match.cornersAvg}</div>
+          <div style="font-size:24px; font-weight:800; margin-top:10px;">${match.cornersAvg}</div>
         </div>
 
-        <div style="padding:18px; border-radius:20px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.06);">
+        <div style="padding:20px; border-radius:22px; background:rgba(16,29,56,0.9); border:1px solid rgba(126,147,255,0.12);">
           <div style="color:#8ea4cf; font-size:13px;">BTTS</div>
-          <div style="font-size:24px; font-weight:800; margin-top:8px;">${match.bttsRate}</div>
+          <div style="font-size:24px; font-weight:800; margin-top:10px;">${match.bttsRate}</div>
         </div>
       </div>
 
       <div style="
         display:grid;
-        grid-template-columns:1.25fr 0.95fr;
+        grid-template-columns:1.2fr 0.95fr;
         gap:18px;
       " class="detail-grid-responsive">
-        <div style="padding:22px; border-radius:22px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.06);">
-          <div style="font-size:12px; text-transform:uppercase; letter-spacing:0.12em; color:#66c7ff; font-weight:800;">Leitura do jogo</div>
-          <h3 style="margin:12px 0 10px; font-size:24px;">Tendência principal</h3>
-          <p style="margin:0; color:#c7d4ef; line-height:1.7;">${match.trend}</p>
+        <div style="
+          display:flex;
+          flex-direction:column;
+          gap:18px;
+        ">
+          <div style="padding:22px; border-radius:24px; background:rgba(12,25,47,0.94); border:1px solid rgba(126,147,255,0.12);">
+            <div style="font-size:12px; text-transform:uppercase; letter-spacing:0.12em; color:#66c7ff; font-weight:800;">Leitura principal</div>
+            <h3 style="margin:12px 0 10px; font-size:24px;">Tendência do confronto</h3>
+            <p style="margin:0; color:#d3def5; line-height:1.8;">${match.trend}</p>
+          </div>
 
-          <div style="margin-top:18px;">
-            <div style="font-size:12px; text-transform:uppercase; letter-spacing:0.12em; color:#66c7ff; font-weight:800;">Recomendação</div>
-            <p style="margin:12px 0 0; color:#c7d4ef; line-height:1.7;">${buildRecommendation(match)}</p>
+          <div style="padding:22px; border-radius:24px; background:linear-gradient(135deg, rgba(89,184,255,0.12), rgba(122,108,255,0.12)); border:1px solid rgba(126,147,255,0.18);">
+            <div style="font-size:12px; text-transform:uppercase; letter-spacing:0.12em; color:#b7d7ff; font-weight:800;">Recomendação executiva</div>
+            <h3 style="margin:12px 0 10px; font-size:24px;">Como operar esse jogo</h3>
+            <p style="margin:0; color:#eef4ff; line-height:1.8;">${recommendation}</p>
+          </div>
+
+          <div style="padding:22px; border-radius:24px; background:rgba(12,25,47,0.94); border:1px solid rgba(126,147,255,0.12);">
+            <div style="font-size:12px; text-transform:uppercase; letter-spacing:0.12em; color:#66c7ff; font-weight:800;">O que observar</div>
+            <ul style="margin:14px 0 0; padding-left:20px; color:#d3def5; line-height:1.9;">
+              ${watchPoints.map((point) => `<li>${point}</li>`).join("")}
+            </ul>
           </div>
         </div>
 
-        <div style="padding:22px; border-radius:22px; background:linear-gradient(135deg, rgba(77,150,255,0.16), rgba(124,109,255,0.16)); border:1px solid rgba(122,145,255,0.18);">
-          <div style="font-size:12px; text-transform:uppercase; letter-spacing:0.12em; color:#b7d7ff; font-weight:800;">Resumo executivo</div>
-          <ul style="margin:14px 0 0; padding-left:18px; color:#dbe7ff; line-height:1.9;">
-            <li><strong>Liga:</strong> ${match.league}</li>
-            <li><strong>Horário:</strong> ${match.time}</li>
-            <li><strong>Estádio:</strong> ${match.stadium}</li>
-            <li><strong>Mercado:</strong> ${match.market}</li>
-            <li><strong>Confiança:</strong> ${match.confidence}%</li>
-            <li><strong>Status:</strong> ${state.usingLiveApi ? "Dados vindos da API" : "Dados em modo demo"}</li>
-          </ul>
+        <div style="
+          display:flex;
+          flex-direction:column;
+          gap:18px;
+        ">
+          <div style="padding:22px; border-radius:24px; background:rgba(12,25,47,0.94); border:1px solid rgba(126,147,255,0.12);">
+            <div style="font-size:12px; text-transform:uppercase; letter-spacing:0.12em; color:#66c7ff; font-weight:800;">Resumo executivo</div>
+            <ul style="margin:14px 0 0; padding-left:18px; color:#d3def5; line-height:1.95;">
+              <li><strong>Liga:</strong> ${match.league}</li>
+              <li><strong>Horário:</strong> ${match.time}</li>
+              <li><strong>Estádio:</strong> ${match.stadium}</li>
+              <li><strong>Mercado:</strong> ${match.market}</li>
+              <li><strong>Confiança:</strong> ${match.confidence}%</li>
+              <li><strong>BTTS:</strong> ${match.bttsRate}</li>
+              <li><strong>Origem dos dados:</strong> ${state.usingLiveApi ? "API ao vivo" : "Modo demo"}</li>
+            </ul>
+          </div>
+
+          <div style="padding:22px; border-radius:24px; background:rgba(12,25,47,0.94); border:1px solid rgba(126,147,255,0.12);">
+            <div style="font-size:12px; text-transform:uppercase; letter-spacing:0.12em; color:#66c7ff; font-weight:800;">Leitura de risco</div>
+            <h3 style="margin:12px 0 10px; font-size:24px;">Risco ${riskLevel}</h3>
+            <p style="margin:0; color:#d3def5; line-height:1.8;">${riskDescription}</p>
+          </div>
+
+          <div style="padding:22px; border-radius:24px; background:rgba(12,25,47,0.94); border:1px solid rgba(126,147,255,0.12);">
+            <div style="font-size:12px; text-transform:uppercase; letter-spacing:0.12em; color:#66c7ff; font-weight:800;">Conclusão rápida</div>
+            <p style="margin:12px 0 0; color:#d3def5; line-height:1.8;">
+              ${match.home} x ${match.away} chega com foco principal em <strong>${match.market}</strong>,
+              sustentado por uma leitura de <strong>${match.confidence}%</strong> de confiança e média de
+              <strong>${match.goalsAvg}</strong> gols no cenário atual.
+            </p>
+          </div>
         </div>
       </div>
     </section>
@@ -730,7 +829,6 @@ function updateSidebarActive() {
 function setDashboardLayoutForDetails(isDetail) {
   if (statsGrid) statsGrid.style.display = isDetail ? "none" : "";
   if (sectionTitleRow) sectionTitleRow.style.display = isDetail ? "none" : "";
-  if (searchInput) searchInput.value = isDetail ? state.search : state.search;
 
   if (featuredPanel) {
     featuredPanel.style.marginBottom = isDetail ? "18px" : "";
