@@ -28,20 +28,6 @@ const demoMatches = [
     bttsRate: "68%",
   },
   {
-    period: "today",
-    league: "La Liga",
-    market: "Casa vence",
-    home: "Barcelona",
-    away: "Sevilla",
-    time: "22:00",
-    stadium: "Olímpic Lluís Companys",
-    trend: "Mandante dominante e bom histórico recente em casa.",
-    confidence: 76,
-    goalsAvg: 2.6,
-    cornersAvg: 8.8,
-    bttsRate: "54%",
-  },
-  {
     period: "tomorrow",
     league: "Premier League",
     market: "Mais de 8.5 escanteios",
@@ -55,52 +41,15 @@ const demoMatches = [
     cornersAvg: 11.2,
     bttsRate: "73%",
   },
-  {
-    period: "tomorrow",
-    league: "Serie A Itália",
-    market: "Menos de 3.5 gols",
-    home: "Juventus",
-    away: "Milan",
-    time: "15:45",
-    stadium: "Allianz Stadium",
-    trend: "Jogo grande com tendência de controle e menos exposição.",
-    confidence: 74,
-    goalsAvg: 2.2,
-    cornersAvg: 8.1,
-    bttsRate: "49%",
-  },
-  {
-    period: "week",
-    league: "Libertadores",
-    market: "Empate anula casa",
-    home: "São Paulo",
-    away: "River Plate",
-    time: "21:30",
-    stadium: "MorumBIS",
-    trend: "Mandante consistente e encaixe defensivo mais seguro.",
-    confidence: 78,
-    goalsAvg: 2.4,
-    cornersAvg: 9.1,
-    bttsRate: "57%",
-  },
-  {
-    period: "week",
-    league: "Copa do Brasil",
-    market: "Mais de 1.5 gols",
-    home: "Atlético-MG",
-    away: "Athletico-PR",
-    time: "20:00",
-    stadium: "Arena MRV",
-    trend: "Tendência de pelo menos dois gols pelo encaixe ofensivo.",
-    confidence: 81,
-    goalsAvg: 2.7,
-    cornersAvg: 9.7,
-    bttsRate: "66%",
-  },
 ];
 
-const SUPABASE_URL = window.APP_CONFIG?.SUPABASE_URL || "";
-const SUPABASE_ANON_KEY = window.APP_CONFIG?.SUPABASE_ANON_KEY || "";
+const APP_CONFIG = window.APP_CONFIG || {};
+
+const SUPABASE_URL = APP_CONFIG.SUPABASE_URL || "";
+const SUPABASE_ANON_KEY = APP_CONFIG.SUPABASE_ANON_KEY || "";
+const FOOTBALL_API_BASE_URL = APP_CONFIG.FOOTBALL_API_BASE_URL || "";
+const FOOTBALL_API_KEY = APP_CONFIG.FOOTBALL_API_KEY || "";
+const FOOTBALL_TIMEZONE = APP_CONFIG.FOOTBALL_TIMEZONE || "America/Sao_Paulo";
 
 const sbClient =
   window.supabase && SUPABASE_URL && SUPABASE_ANON_KEY
@@ -111,6 +60,9 @@ const state = {
   filter: "today",
   search: "",
   mode: "demo",
+  matches: [],
+  usingLiveApi: false,
+  loadingMatches: false,
 };
 
 const loginScreen = document.getElementById("loginScreen");
@@ -144,13 +96,23 @@ function setMode(mode) {
   state.mode = mode;
 
   if (mode === "supabase") {
-    modeLabel.textContent = "Supabase Live";
-    modeCardLabel.textContent = "Supabase Live";
-    modeCardDescription.textContent = "Login real conectado ao banco";
+    modeLabel.textContent = state.usingLiveApi
+      ? "Supabase + API Live"
+      : "Supabase Live";
+    modeCardLabel.textContent = state.usingLiveApi
+      ? "Supabase + API"
+      : "Supabase Live";
+    modeCardDescription.textContent = state.usingLiveApi
+      ? "Login real com partidas puxadas da API"
+      : "Login real conectado ao banco";
   } else {
-    modeLabel.textContent = "Premium Demo";
-    modeCardLabel.textContent = "Demo Premium";
-    modeCardDescription.textContent = "Pronto para integrar API real";
+    modeLabel.textContent = state.usingLiveApi ? "API Live" : "Premium Demo";
+    modeCardLabel.textContent = state.usingLiveApi
+      ? "API Live"
+      : "Demo Premium";
+    modeCardDescription.textContent = state.usingLiveApi
+      ? "Partidas reais puxadas da API"
+      : "Pronto para integrar API real";
   }
 }
 
@@ -159,12 +121,159 @@ function showScreen(logged) {
   dashboardScreen.classList.toggle("active", logged);
 
   if (logged) {
-    renderDashboard();
+    refreshMatches().finally(() => {
+      renderDashboard();
+    });
+  }
+}
+
+function getTodayDateString(offsetDays = 0) {
+  const base = new Date();
+  base.setDate(base.getDate() + offsetDays);
+  const year = base.getFullYear();
+  const month = String(base.getMonth() + 1).padStart(2, "0");
+  const day = String(base.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function getApiDateByFilter(filter) {
+  if (filter === "today") return getTodayDateString(0);
+  if (filter === "tomorrow") return getTodayDateString(1);
+  return getTodayDateString(0);
+}
+
+function normalizeLeagueName(rawName) {
+  if (!rawName) return "Liga";
+  return rawName
+    .replace("Serie A", "Série A")
+    .replace("UEFA Champions League", "Champions League");
+}
+
+function buildTrendText(homeGoals, awayGoals) {
+  const total = (homeGoals || 0) + (awayGoals || 0);
+
+  if (total >= 2.8) return "Tendência ofensiva com boa chance de gols.";
+  if (total >= 2.2)
+    return "Jogo equilibrado com possibilidade de boas chegadas.";
+  return "Confronto com tendência mais controlada e menor volume ofensivo.";
+}
+
+function guessMarket(confidence, totalGoalsAvg) {
+  if (totalGoalsAvg >= 2.8) return "Mais de 2.5 gols";
+  if (confidence >= 78) return "BTTS Sim";
+  if (totalGoalsAvg <= 2.1) return "Menos de 3.5 gols";
+  return "Mais de 1.5 gols";
+}
+
+function calculateConfidence(homeGoals, awayGoals, homeForm, awayForm) {
+  const goalsFactor = Math.min(((homeGoals || 0) + (awayGoals || 0)) * 18, 55);
+  const formFactor = ((homeForm || 0) + (awayForm || 0)) * 4;
+  const raw = 52 + goalsFactor * 0.35 + formFactor;
+  return Math.max(58, Math.min(92, Math.round(raw)));
+}
+
+function getPeriodFromFilter(filter) {
+  if (filter === "today") return "today";
+  if (filter === "tomorrow") return "tomorrow";
+  return "week";
+}
+
+function mapFixtureToMatch(fixtureData, currentFilter) {
+  const fixture = fixtureData.fixture || {};
+  const league = fixtureData.league || {};
+  const teams = fixtureData.teams || {};
+  const goals = fixtureData.goals || {};
+  const score = fixtureData.score || {};
+
+  const homeName = teams.home?.name || "Mandante";
+  const awayName = teams.away?.name || "Visitante";
+  const stadium = fixture.venue?.name || "Estádio não informado";
+
+  const fixtureDate = fixture.date ? new Date(fixture.date) : new Date();
+  const matchTime = fixtureDate.toLocaleTimeString("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: FOOTBALL_TIMEZONE,
+  });
+
+  const homeGoalsAvg = Number(goals.home ?? score.fulltime?.home ?? 1.1);
+  const awayGoalsAvg = Number(goals.away ?? score.fulltime?.away ?? 1.0);
+  const totalGoalsAvg = Math.max(1.2, homeGoalsAvg + awayGoalsAvg);
+  const confidence = calculateConfidence(homeGoalsAvg, awayGoalsAvg, 3, 3);
+
+  return {
+    id: String(
+      fixture.id || `${homeName}-${awayName}-${fixture.date || Date.now()}`,
+    ),
+    period: getPeriodFromFilter(currentFilter),
+    league: normalizeLeagueName(league.name),
+    market: guessMarket(confidence, totalGoalsAvg),
+    home: homeName,
+    away: awayName,
+    time: matchTime,
+    stadium,
+    trend: buildTrendText(homeGoalsAvg, awayGoalsAvg),
+    confidence,
+    goalsAvg: Number(totalGoalsAvg.toFixed(1)),
+    cornersAvg: Number((8 + (confidence % 4)).toFixed(1)),
+    bttsRate: `${Math.max(45, Math.min(82, Math.round(confidence - 8)))}%`,
+  };
+}
+
+async function fetchLiveMatches() {
+  if (!FOOTBALL_API_BASE_URL || !FOOTBALL_API_KEY) {
+    throw new Error("API não configurada no config.js");
+  }
+
+  const date = getApiDateByFilter(state.filter);
+  const url = new URL(`${FOOTBALL_API_BASE_URL}/fixtures`);
+  url.searchParams.set("date", date);
+  url.searchParams.set("timezone", FOOTBALL_TIMEZONE);
+
+  const response = await fetch(url.toString(), {
+    method: "GET",
+    headers: {
+      "x-apisports-key": FOOTBALL_API_KEY,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Erro da API: ${response.status}`);
+  }
+
+  const data = await response.json();
+  const fixtures = Array.isArray(data.response) ? data.response : [];
+
+  return fixtures.map((item) => mapFixtureToMatch(item, state.filter));
+}
+
+async function refreshMatches() {
+  state.loadingMatches = true;
+
+  try {
+    const liveMatches = await fetchLiveMatches();
+
+    if (liveMatches.length) {
+      state.matches = liveMatches;
+      state.usingLiveApi = true;
+    } else {
+      state.matches = demoMatches;
+      state.usingLiveApi = false;
+    }
+  } catch (error) {
+    console.error("Erro ao buscar API:", error);
+    state.matches = demoMatches;
+    state.usingLiveApi = false;
+  } finally {
+    state.loadingMatches = false;
+    setMode(state.mode);
   }
 }
 
 function getFilteredMatches() {
-  return demoMatches.filter((match) => {
+  const source = state.matches.length ? state.matches : demoMatches;
+
+  return source.filter((match) => {
     const filterOk =
       state.filter === "week"
         ? ["today", "tomorrow", "week"].includes(match.period)
@@ -174,7 +283,6 @@ function getFilteredMatches() {
       `${match.home} ${match.away} ${match.league} ${match.market}`.toLowerCase();
 
     const searchOk = text.includes(state.search.toLowerCase());
-
     return filterOk && searchOk;
   });
 }
@@ -265,6 +373,16 @@ function createMatchCard(match) {
 }
 
 function renderMatches(matches) {
+  if (state.loadingMatches) {
+    matchesGrid.innerHTML = `
+      <div class="empty-state">
+        <h3>Carregando partidas...</h3>
+        <p>Aguarde enquanto buscamos os jogos.</p>
+      </div>
+    `;
+    return;
+  }
+
   if (!matches.length) {
     matchesGrid.innerHTML = `
       <div class="empty-state">
@@ -365,7 +483,7 @@ signupBtn.addEventListener("click", async () => {
   await signUpWithSupabase(email, password);
 });
 
-demoLogin.addEventListener("click", () => {
+demoLogin.addEventListener("click", async () => {
   setMode("demo");
   setLoggedIn(true);
   setMessage("Você entrou em modo demo.");
@@ -379,10 +497,12 @@ logoutBtn.addEventListener("click", async () => {
 });
 
 filterButtons.forEach((button) => {
-  button.addEventListener("click", () => {
+  button.addEventListener("click", async () => {
     filterButtons.forEach((item) => item.classList.remove("active"));
     button.classList.add("active");
     state.filter = button.dataset.filter;
+
+    await refreshMatches();
     renderDashboard();
   });
 });
