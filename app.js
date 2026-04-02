@@ -63,6 +63,8 @@ const state = {
   matches: [],
   usingLiveApi: false,
   loadingMatches: false,
+  currentSection: "overview",
+  favorites: JSON.parse(localStorage.getItem("bv_favorites") || "[]"),
 };
 
 const loginScreen = document.getElementById("loginScreen");
@@ -78,6 +80,7 @@ const loginMessage = document.getElementById("loginMessage");
 const modeLabel = document.getElementById("modeLabel");
 const modeCardLabel = document.getElementById("modeCardLabel");
 const modeCardDescription = document.getElementById("modeCardDescription");
+const sidebarButtons = document.querySelectorAll(".sidebar-nav .nav-item");
 
 function setMessage(text, type = "default") {
   loginMessage.innerHTML = `<span class="status-dot"></span>${text}`;
@@ -90,6 +93,10 @@ function isLoggedIn() {
 
 function setLoggedIn(value) {
   localStorage.setItem("bv_logged", value ? "true" : "false");
+}
+
+function saveFavorites() {
+  localStorage.setItem("bv_favorites", JSON.stringify(state.favorites));
 }
 
 function setMode(mode) {
@@ -281,10 +288,21 @@ function getFilteredMatches() {
 
     const text =
       `${match.home} ${match.away} ${match.league} ${match.market}`.toLowerCase();
-
     const searchOk = text.includes(state.search.toLowerCase());
+
     return filterOk && searchOk;
   });
+}
+
+function getTrendMatches() {
+  return [...getFilteredMatches()]
+    .sort((a, b) => b.confidence - a.confidence)
+    .slice(0, 8);
+}
+
+function getFavoriteMatches() {
+  const all = state.matches.length ? state.matches : demoMatches;
+  return all.filter((match) => state.favorites.includes(match.id));
 }
 
 function renderStats(matches) {
@@ -319,7 +337,20 @@ function renderFeatured(matches) {
     `${featured.confidence}%`;
 }
 
-function createMatchCard(match) {
+function toggleFavorite(matchId) {
+  if (state.favorites.includes(matchId)) {
+    state.favorites = state.favorites.filter((id) => id !== matchId);
+  } else {
+    state.favorites.push(matchId);
+  }
+
+  saveFavorites();
+  renderDashboard();
+}
+
+function createMatchCard(match, compact = false) {
+  const isFavorite = state.favorites.includes(match.id);
+
   return `
     <article class="match-card">
       <div class="match-top">
@@ -368,11 +399,34 @@ function createMatchCard(match) {
           <div class="confidence-fill" style="width:${match.confidence}%"></div>
         </div>
       </div>
+
+      <div style="margin-top:14px; display:flex; justify-content:${compact ? "flex-end" : "space-between"}; align-items:center; gap:10px;">
+        ${compact ? "" : `<small style="color:#8fa6d8;">${match.trend}</small>`}
+        <button
+          onclick="toggleFavorite('${match.id}')"
+          style="
+            border:none;
+            border-radius:12px;
+            padding:10px 14px;
+            cursor:pointer;
+            background:${isFavorite ? "linear-gradient(135deg,#5db0ff,#7c6dff)" : "rgba(255,255,255,0.08)"};
+            color:white;
+            font-weight:600;
+          "
+        >
+          ${isFavorite ? "★ Favorito" : "☆ Favoritar"}
+        </button>
+      </div>
     </article>
   `;
 }
 
-function renderMatches(matches) {
+window.toggleFavorite = toggleFavorite;
+
+function renderOverview(matches) {
+  renderStats(matches);
+  renderFeatured(matches);
+
   if (state.loadingMatches) {
     matchesGrid.innerHTML = `
       <div class="empty-state">
@@ -393,14 +447,138 @@ function renderMatches(matches) {
     return;
   }
 
-  matchesGrid.innerHTML = matches.map(createMatchCard).join("");
+  matchesGrid.innerHTML = matches
+    .map((match) => createMatchCard(match))
+    .join("");
+}
+
+function renderPartidas(matches) {
+  document.getElementById("featuredTitle").textContent = "Todas as partidas";
+  document.getElementById("featuredDescription").textContent =
+    "Lista completa das partidas disponíveis no filtro atual.";
+  document.getElementById("featuredConfidence").textContent =
+    `${matches.length}`;
+
+  matchesGrid.innerHTML = matches.length
+    ? matches.map((match) => createMatchCard(match)).join("")
+    : `
+      <div class="empty-state">
+        <h3>Sem partidas</h3>
+        <p>Nenhuma partida encontrada nesse filtro.</p>
+      </div>
+    `;
+}
+
+function renderTendencias() {
+  const trendMatches = getTrendMatches();
+
+  document.getElementById("featuredTitle").textContent = "Tendências do dia";
+  document.getElementById("featuredDescription").textContent =
+    "Jogos ordenados pelas maiores confianças.";
+  document.getElementById("featuredConfidence").textContent =
+    `${trendMatches[0]?.confidence || 0}%`;
+
+  matchesGrid.innerHTML = trendMatches.length
+    ? trendMatches.map((match) => createMatchCard(match)).join("")
+    : `
+      <div class="empty-state">
+        <h3>Sem tendências</h3>
+        <p>Nenhum jogo com tendência disponível.</p>
+      </div>
+    `;
+}
+
+function renderFavoritos() {
+  const favoriteMatches = getFavoriteMatches();
+
+  document.getElementById("featuredTitle").textContent = "Seus favoritos";
+  document.getElementById("featuredDescription").textContent =
+    "Jogos que você marcou para acompanhar depois.";
+  document.getElementById("featuredConfidence").textContent =
+    `${favoriteMatches.length}`;
+
+  matchesGrid.innerHTML = favoriteMatches.length
+    ? favoriteMatches.map((match) => createMatchCard(match)).join("")
+    : `
+      <div class="empty-state">
+        <h3>Nenhum favorito ainda</h3>
+        <p>Use o botão “Favoritar” nos cards para salvar aqui.</p>
+      </div>
+    `;
+}
+
+function renderConfiguracoes() {
+  const apiStatus = state.usingLiveApi ? "Conectada" : "Não conectada";
+  const supabaseStatus = sbClient ? "Conectado" : "Não configurado";
+
+  document.getElementById("featuredTitle").textContent =
+    "Configurações do sistema";
+  document.getElementById("featuredDescription").textContent =
+    "Resumo técnico da conexão atual.";
+  document.getElementById("featuredConfidence").textContent = "OK";
+
+  matchesGrid.innerHTML = `
+    <div class="empty-state" style="text-align:left;">
+      <h3>Status atual</h3>
+      <p><strong>Supabase:</strong> ${supabaseStatus}</p>
+      <p><strong>API Futebol:</strong> ${apiStatus}</p>
+      <p><strong>Timezone:</strong> ${FOOTBALL_TIMEZONE}</p>
+      <p><strong>Filtro atual:</strong> ${state.filter}</p>
+      <p><strong>Modo atual:</strong> ${state.mode}</p>
+      <p><strong>Partidas carregadas:</strong> ${state.matches.length || demoMatches.length}</p>
+    </div>
+  `;
+}
+
+function updateSidebarActive() {
+  sidebarButtons.forEach((button) => {
+    const section = button.textContent.trim().toLowerCase();
+
+    button.classList.remove("active");
+
+    if (
+      (section.includes("visão") && state.currentSection === "overview") ||
+      (section.includes("partidas") && state.currentSection === "matches") ||
+      (section.includes("tendências") && state.currentSection === "trends") ||
+      (section.includes("favoritos") && state.currentSection === "favorites") ||
+      (section.includes("configurações") && state.currentSection === "settings")
+    ) {
+      button.classList.add("active");
+    }
+  });
 }
 
 function renderDashboard() {
   const matches = getFilteredMatches();
+
   renderStats(matches);
   renderFeatured(matches);
-  renderMatches(matches);
+  updateSidebarActive();
+
+  if (state.currentSection === "overview") {
+    renderOverview(matches);
+    return;
+  }
+
+  if (state.currentSection === "matches") {
+    renderPartidas(matches);
+    return;
+  }
+
+  if (state.currentSection === "trends") {
+    renderTendencias();
+    return;
+  }
+
+  if (state.currentSection === "favorites") {
+    renderFavoritos();
+    return;
+  }
+
+  if (state.currentSection === "settings") {
+    renderConfiguracoes();
+    return;
+  }
 }
 
 async function loginWithSupabase(email, password) {
@@ -503,6 +681,20 @@ filterButtons.forEach((button) => {
     state.filter = button.dataset.filter;
 
     await refreshMatches();
+    renderDashboard();
+  });
+});
+
+sidebarButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    const label = button.textContent.trim().toLowerCase();
+
+    if (label.includes("visão")) state.currentSection = "overview";
+    else if (label.includes("partidas")) state.currentSection = "matches";
+    else if (label.includes("tendências")) state.currentSection = "trends";
+    else if (label.includes("favoritos")) state.currentSection = "favorites";
+    else if (label.includes("configurações")) state.currentSection = "settings";
+
     renderDashboard();
   });
 });
