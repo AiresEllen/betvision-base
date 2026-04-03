@@ -105,43 +105,39 @@ function saveFavoritesLocal() {
   localStorage.setItem("bv_favorites", JSON.stringify(state.favorites));
 }
 
-async function getCurrentUser() {
-  if (!sbClient) return null;
+function getCurrentUser() {
+  if (!sbClient) return Promise.resolve(null);
 
-  const {
-    data: { user },
-  } = await sbClient.auth.getUser();
-
-  return user || null;
+  return sbClient.auth.getUser().then(({ data }) => data.user || null);
 }
 
-async function loadFavoritesFromSupabase() {
-  if (!sbClient) return false;
+function loadFavoritesFromSupabase() {
+  if (!sbClient) return Promise.resolve(false);
 
-  const user = await getCurrentUser();
-  if (!user) return false;
+  return getCurrentUser().then((user) => {
+    if (!user) return false;
 
-  const { data, error } = await sbClient
-    .from("favorites")
-    .select("match_id")
-    .eq("user_id", user.id);
+    return sbClient
+      .from("favorites")
+      .select("match_id")
+      .eq("user_id", user.id)
+      .then(({ data, error }) => {
+        if (error) {
+          console.error("Erro ao carregar favoritos:", error);
+          return false;
+        }
 
-  if (error) {
-    console.error("Erro ao carregar favoritos:", error);
-    return false;
-  }
-
-  state.favorites = (data || []).map((item) => item.match_id);
-  saveFavoritesLocal();
-  return true;
+        state.favorites = (data || []).map((item) => item.match_id);
+        saveFavoritesLocal();
+        return true;
+      });
+  });
 }
 
-async function syncFavoritesAfterLogin() {
-  const loaded = await loadFavoritesFromSupabase();
-
-  if (!loaded) {
-    saveFavoritesLocal();
-  }
+function syncFavoritesAfterLogin() {
+  return loadFavoritesFromSupabase().then((loaded) => {
+    if (!loaded) saveFavoritesLocal();
+  });
 }
 
 function setMode(mode) {
@@ -168,15 +164,17 @@ function setMode(mode) {
   }
 }
 
-async function showScreen(logged) {
+function showScreen(logged) {
   loginScreen.classList.toggle("active", !logged);
   dashboardScreen.classList.toggle("active", logged);
 
-  if (logged) {
-    await refreshMatches();
-    await syncFavoritesAfterLogin();
-    renderDashboard();
-  }
+  if (!logged) return Promise.resolve();
+
+  return refreshMatches()
+    .then(() => syncFavoritesAfterLogin())
+    .then(() => {
+      renderDashboard();
+    });
 }
 
 function getTodayDateString(offsetDays = 0) {
@@ -244,12 +242,10 @@ function getRiskLevel(confidence) {
 }
 
 function getRiskDescription(confidence) {
-  if (confidence >= 86) {
+  if (confidence >= 86)
     return "O cenário atual mostra boa sustentação estatística para a leitura proposta.";
-  }
-  if (confidence >= 74) {
+  if (confidence >= 74)
     return "Existe valor, mas com alguns pontos que merecem confirmação antes da entrada.";
-  }
   return "A análise sugere mais oscilação e necessidade de confirmação extra.";
 }
 
@@ -337,57 +333,50 @@ function mapFixtureToMatch(fixtureData, currentFilter) {
   };
 }
 
-async function fetchLiveMatches() {
+function fetchLiveMatches() {
   const date = getApiDateByFilter(state.filter);
 
-  const url = new URL("/.netlify/functions/fixtures", window.location.origin);
+  const url = new URL(FOOTBALL_FUNCTION_URL, window.location.origin);
   url.searchParams.set("date", date);
   url.searchParams.set("timezone", FOOTBALL_TIMEZONE);
 
-  const response = await fetch(url.toString(), {
+  return fetch(url.toString(), {
     method: "GET",
-  });
-
-  if (!response.ok) {
-    throw new Error(`Erro da API: ${response.status}`);
-  }
-
-  const data = await response.json();
-  const fixtures = Array.isArray(data.response) ? data.response : [];
-
-  return fixtures.map((item) => mapFixtureToMatch(item, state.filter));
+  })
+    .then((response) => {
+      if (!response.ok) {
+        throw new Error(`Erro da API: ${response.status}`);
+      }
+      return response.json();
+    })
+    .then((data) => {
+      const fixtures = Array.isArray(data.response) ? data.response : [];
+      return fixtures.map((item) => mapFixtureToMatch(item, state.filter));
+    });
 }
 
-if (!response.ok) {
-  throw new Error(`Erro da API: ${response.status}`);
-}
-
-const data = await response.json();
-const fixtures = Array.isArray(data.response) ? data.response : [];
-
-return fixtures.map((item) => mapFixtureToMatch(item, state.filter));
-
-async function refreshMatches() {
+function refreshMatches() {
   state.loadingMatches = true;
 
-  try {
-    const liveMatches = await fetchLiveMatches();
-
-    if (liveMatches.length) {
-      state.matches = liveMatches;
-      state.usingLiveApi = true;
-    } else {
+  return fetchLiveMatches()
+    .then((liveMatches) => {
+      if (liveMatches.length) {
+        state.matches = liveMatches;
+        state.usingLiveApi = true;
+      } else {
+        state.matches = demoMatches;
+        state.usingLiveApi = false;
+      }
+    })
+    .catch((error) => {
+      console.error("Erro ao buscar API:", error);
       state.matches = demoMatches;
       state.usingLiveApi = false;
-    }
-  } catch (error) {
-    console.error("Erro ao buscar API:", error);
-    state.matches = demoMatches;
-    state.usingLiveApi = false;
-  } finally {
-    state.loadingMatches = false;
-    setMode(state.mode);
-  }
+    })
+    .finally(() => {
+      state.loadingMatches = false;
+      setMode(state.mode);
+    });
 }
 
 function getAllMatches() {
@@ -460,72 +449,76 @@ function renderFeatured(matches) {
     `${featured.confidence}%`;
 }
 
-async function saveFavoriteToSupabase(matchId) {
-  if (!sbClient) return false;
+function saveFavoriteToSupabase(matchId) {
+  if (!sbClient) return Promise.resolve(false);
 
-  const user = await getCurrentUser();
-  if (!user) return false;
+  return getCurrentUser().then((user) => {
+    if (!user) return false;
 
-  const match = getAllMatches().find((item) => item.id === matchId);
-  if (!match) return false;
+    const match = getAllMatches().find((item) => item.id === matchId);
+    if (!match) return false;
 
-  const { error } = await sbClient.from("favorites").upsert(
-    {
-      user_id: user.id,
-      match_id: match.id,
-      home_team: match.home,
-      away_team: match.away,
-      league: match.league,
-      market: match.market,
-    },
-    {
-      onConflict: "user_id,match_id",
-    },
-  );
-
-  if (error) {
-    console.error("Erro ao salvar favorito:", error);
-    return false;
-  }
-
-  return true;
+    return sbClient
+      .from("favorites")
+      .upsert(
+        {
+          user_id: user.id,
+          match_id: match.id,
+          home_team: match.home,
+          away_team: match.away,
+          league: match.league,
+          market: match.market,
+        },
+        {
+          onConflict: "user_id,match_id",
+        },
+      )
+      .then(({ error }) => {
+        if (error) {
+          console.error("Erro ao salvar favorito:", error);
+          return false;
+        }
+        return true;
+      });
+  });
 }
 
-async function removeFavoriteFromSupabase(matchId) {
-  if (!sbClient) return false;
+function removeFavoriteFromSupabase(matchId) {
+  if (!sbClient) return Promise.resolve(false);
 
-  const user = await getCurrentUser();
-  if (!user) return false;
+  return getCurrentUser().then((user) => {
+    if (!user) return false;
 
-  const { error } = await sbClient
-    .from("favorites")
-    .delete()
-    .eq("user_id", user.id)
-    .eq("match_id", matchId);
-
-  if (error) {
-    console.error("Erro ao remover favorito:", error);
-    return false;
-  }
-
-  return true;
+    return sbClient
+      .from("favorites")
+      .delete()
+      .eq("user_id", user.id)
+      .eq("match_id", matchId)
+      .then(({ error }) => {
+        if (error) {
+          console.error("Erro ao remover favorito:", error);
+          return false;
+        }
+        return true;
+      });
+  });
 }
 
-async function toggleFavorite(matchId) {
+function toggleFavorite(matchId) {
   const alreadyFavorite = state.favorites.includes(matchId);
 
   if (alreadyFavorite) {
     state.favorites = state.favorites.filter((id) => id !== matchId);
     saveFavoritesLocal();
     renderDashboard();
-    await removeFavoriteFromSupabase(matchId);
+    removeFavoriteFromSupabase(matchId);
     return;
   }
 
   state.favorites.push(matchId);
   saveFavoritesLocal();
   renderDashboard();
-  await saveFavoriteToSupabase(matchId);
+  saveFavoriteToSupabase(matchId);
 }
 
 window.toggleFavorite = toggleFavorite;
@@ -547,11 +540,7 @@ function createMatchCard(match) {
   const isFavorite = state.favorites.includes(match.id);
 
   return `
-    <article
-      class="match-card"
-      onclick="openMatchDetails('${match.id}')"
-      style="cursor:pointer;"
-    >
+    <article class="match-card" onclick="openMatchDetails('${match.id}')" style="cursor:pointer;">
       <div class="match-top">
         <span class="league-pill">${match.league}</span>
         <span class="market-pill">${match.market}</span>
@@ -924,61 +913,64 @@ function renderDashboard() {
   }
 }
 
-async function loginWithSupabase(email, password) {
+function loginWithSupabase(email, password) {
   if (!sbClient) {
     setMessage(
       "Supabase não configurado. Preencha o arquivo config.js ou entre em modo demo.",
       "error",
     );
-    return;
+    return Promise.resolve();
   }
 
-  const { error } = await sbClient.auth.signInWithPassword({
-    email,
-    password,
-  });
+  return sbClient.auth
+    .signInWithPassword({
+      email,
+      password,
+    })
+    .then(({ error }) => {
+      if (error) {
+        setMessage(`Erro no login: ${error.message}`, "error");
+        return;
+      }
 
-  if (error) {
-    setMessage(`Erro no login: ${error.message}`, "error");
-    return;
-  }
-
-  setMode("supabase");
-  setLoggedIn(true);
-  await showScreen(true);
+      setMode("supabase");
+      setLoggedIn(true);
+      return showScreen(true);
+    });
 }
 
-async function signUpWithSupabase(email, password) {
+function signUpWithSupabase(email, password) {
   if (!sbClient) {
     setMessage(
       "Supabase não configurado. Preencha o arquivo config.js antes de criar conta.",
       "error",
     );
-    return;
+    return Promise.resolve();
   }
 
-  const { error } = await sbClient.auth.signUp({
-    email,
-    password,
-  });
+  return sbClient.auth
+    .signUp({
+      email,
+      password,
+    })
+    .then(({ error }) => {
+      if (error) {
+        setMessage(`Erro ao criar conta: ${error.message}`, "error");
+        return;
+      }
 
-  if (error) {
-    setMessage(`Erro ao criar conta: ${error.message}`, "error");
-    return;
-  }
-
-  setMessage(
-    "Conta criada com sucesso. Se o Supabase pedir confirmação por e-mail, confirme antes de entrar.",
-  );
+      setMessage(
+        "Conta criada com sucesso. Se o Supabase pedir confirmação por e-mail, confirme antes de entrar.",
+      );
+    });
 }
 
-async function logoutSupabaseIfNeeded() {
-  if (sbClient) {
-    await sbClient.auth.signOut();
-  }
+function logoutSupabaseIfNeeded() {
+  if (!sbClient) return Promise.resolve();
+  return sbClient.auth.signOut();
 }
 
-loginForm.addEventListener("submit", async (event) => {
+loginForm.addEventListener("submit", function (event) {
   event.preventDefault();
 
   const email = document.getElementById("email").value.trim();
@@ -989,10 +981,10 @@ loginForm.addEventListener("submit", async (event) => {
     return;
   }
 
-  await loginWithSupabase(email, password);
+  loginWithSupabase(email, password);
 });
 
-signupBtn.addEventListener("click", async () => {
+signupBtn.addEventListener("click", function () {
   const email = document.getElementById("email").value.trim();
   const password = document.getElementById("password").value.trim();
 
@@ -1001,37 +993,40 @@ signupBtn.addEventListener("click", async () => {
     return;
   }
 
-  await signUpWithSupabase(email, password);
+  signUpWithSupabase(email, password);
 });
 
-demoLogin.addEventListener("click", async () => {
+demoLogin.addEventListener("click", function () {
   setMode("demo");
   setLoggedIn(true);
   setMessage("Você entrou em modo demo.");
-  await showScreen(true);
+  showScreen(true);
 });
 
-logoutBtn.addEventListener("click", async () => {
+logoutBtn.addEventListener("click", function () {
   setLoggedIn(false);
   state.selectedMatchId = null;
-  await logoutSupabaseIfNeeded();
-  await showScreen(false);
+
+  logoutSupabaseIfNeeded().then(() => {
+    showScreen(false);
+  });
 });
 
 filterButtons.forEach((button) => {
-  button.addEventListener("click", async () => {
+  button.addEventListener("click", function () {
     filterButtons.forEach((item) => item.classList.remove("active"));
     button.classList.add("active");
     state.filter = button.dataset.filter;
     state.selectedMatchId = null;
 
-    await refreshMatches();
-    renderDashboard();
+    refreshMatches().then(() => {
+      renderDashboard();
+    });
   });
 });
 
 sidebarButtons.forEach((button) => {
-  button.addEventListener("click", () => {
+  button.addEventListener("click", function () {
     const label = button.textContent.trim().toLowerCase();
     state.selectedMatchId = null;
 
@@ -1045,32 +1040,27 @@ sidebarButtons.forEach((button) => {
   });
 });
 
-searchInput.addEventListener("input", (event) => {
+searchInput.addEventListener("input", function (event) {
   state.search = event.target.value;
   renderDashboard();
 });
 
-async function bootstrapAuth() {
+function bootstrapAuth() {
   if (!sbClient) {
     setMode("demo");
-    await showScreen(isLoggedIn());
-    return;
+    return showScreen(isLoggedIn());
   }
 
-  const {
-    data: { session },
-  } = await sbClient.auth.getSession();
+  return sbClient.auth.getSession().then(({ data }) => {
+    if (data.session?.user) {
+      setMode("supabase");
+      setLoggedIn(true);
+      return showScreen(true);
+    }
 
-  if (session?.user) {
-    setMode("supabase");
-    setLoggedIn(true);
-    await showScreen(true);
-  } else {
     setMode("demo");
-    await showScreen(isLoggedIn());
-  }
+    return showScreen(isLoggedIn());
+  });
 }
 
 bootstrapAuth();
-
-// versao atualizada
