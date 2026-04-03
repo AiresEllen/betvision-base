@@ -1072,3 +1072,5 @@ async function bootstrapAuth() {
 }
 
 bootstrapAuth();
+
+// versao atualizada
