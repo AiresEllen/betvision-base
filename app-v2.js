@@ -68,6 +68,9 @@ const state = {
   currentSection: "overview",
   favorites: JSON.parse(localStorage.getItem("bv_favorites") || "[]"),
   selectedMatchId: null,
+  lastUpdateLabel: "Ainda não atualizado",
+  lastApiMessage: "Aguardando sincronização",
+  lastError: "",
 };
 
 const loginScreen = document.getElementById("loginScreen");
@@ -107,7 +110,6 @@ function saveFavoritesLocal() {
 
 function getCurrentUser() {
   if (!sbClient) return Promise.resolve(null);
-
   return sbClient.auth.getUser().then(({ data }) => data.user || null);
 }
 
@@ -140,6 +142,13 @@ function syncFavoritesAfterLogin() {
   });
 }
 
+function getNowLabel() {
+  return new Date().toLocaleString("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  });
+}
+
 function setMode(mode) {
   state.mode = mode;
 
@@ -160,7 +169,7 @@ function setMode(mode) {
       : "Demo Premium";
     modeCardDescription.textContent = state.usingLiveApi
       ? "Partidas reais puxadas da API"
-      : "Pronto para integrar API real";
+      : "Modo demonstrativo com base local";
   }
 }
 
@@ -177,7 +186,7 @@ function showScreen(logged) {
     });
 }
 
-function getTodayDateString(offsetDays = 0) {
+function getTodayDateString(offsetDays) {
   const base = new Date();
   base.setDate(base.getDate() + offsetDays);
   const year = base.getFullYear();
@@ -194,9 +203,13 @@ function getApiDateByFilter(filter) {
 
 function normalizeLeagueName(rawName) {
   if (!rawName) return "Liga";
+
   return rawName
     .replace("Serie A", "Série A")
-    .replace("UEFA Champions League", "Champions League");
+    .replace("UEFA Champions League", "Champions League")
+    .replace("Mexico", "México")
+    .replace("Women", "Feminino")
+    .trim();
 }
 
 function buildTrendText(homeGoals, awayGoals) {
@@ -335,14 +348,12 @@ function mapFixtureToMatch(fixtureData, currentFilter) {
 
 function fetchLiveMatches() {
   const date = getApiDateByFilter(state.filter);
-
   const url = new URL(FOOTBALL_FUNCTION_URL, window.location.origin);
+
   url.searchParams.set("date", date);
   url.searchParams.set("timezone", FOOTBALL_TIMEZONE);
 
-  return fetch(url.toString(), {
-    method: "GET",
-  })
+  return fetch(url.toString(), { method: "GET" })
     .then((response) => {
       if (!response.ok) {
         throw new Error(`Erro da API: ${response.status}`);
@@ -357,21 +368,30 @@ function fetchLiveMatches() {
 
 function refreshMatches() {
   state.loadingMatches = true;
+  state.lastError = "";
 
   return fetchLiveMatches()
     .then((liveMatches) => {
       if (liveMatches.length) {
         state.matches = liveMatches;
         state.usingLiveApi = true;
+        state.lastUpdateLabel = getNowLabel();
+        state.lastApiMessage = "Dados sincronizados com a API";
       } else {
-        state.matches = demoMatches;
-        state.usingLiveApi = false;
+        state.matches = [];
+        state.usingLiveApi = true;
+        state.lastUpdateLabel = getNowLabel();
+        state.lastApiMessage =
+          "API conectada, mas sem partidas no filtro atual";
       }
     })
     .catch((error) => {
       console.error("Erro ao buscar API:", error);
       state.matches = demoMatches;
       state.usingLiveApi = false;
+      state.lastError = error.message || "Falha ao buscar a API";
+      state.lastUpdateLabel = getNowLabel();
+      state.lastApiMessage = "Falha na API, exibindo modo de segurança";
     })
     .finally(() => {
       state.loadingMatches = false;
@@ -380,6 +400,7 @@ function refreshMatches() {
 }
 
 function getAllMatches() {
+  if (state.usingLiveApi) return state.matches;
   return state.matches.length ? state.matches : demoMatches;
 }
 
@@ -427,6 +448,28 @@ function renderStats(matches) {
   document.getElementById("matchesCount").textContent = count;
   document.getElementById("bestConfidence").textContent = `${best}%`;
   document.getElementById("goalsAverage").textContent = avgGoals;
+
+  const statsCards = document.querySelectorAll(".stat-card");
+  if (statsCards[0]) {
+    const note = statsCards[0].querySelector("small");
+    if (note)
+      note.textContent = state.usingLiveApi
+        ? `Atualizado em ${state.lastUpdateLabel}`
+        : "Modo de segurança local";
+  }
+
+  if (statsCards[3]) {
+    const title = statsCards[3].querySelector("strong");
+    const desc = statsCards[3].querySelector("small");
+    if (title)
+      title.textContent = state.usingLiveApi
+        ? "Supabase + API"
+        : "Supabase + fallback";
+    if (desc)
+      desc.textContent = state.usingLiveApi
+        ? "Login real com partidas ao vivo"
+        : "API instável ou indisponível, base local ativa";
+  }
 }
 
 function renderFeatured(matches) {
@@ -434,10 +477,12 @@ function renderFeatured(matches) {
 
   if (!featured) {
     document.getElementById("featuredTitle").textContent =
-      "Nenhuma partida encontrada";
+      "Nenhuma partida disponível";
     document.getElementById("featuredDescription").textContent =
-      "Tente mudar o filtro ou pesquisar outro time.";
-    document.getElementById("featuredConfidence").textContent = "0%";
+      state.usingLiveApi
+        ? "A API está conectada, mas não retornou jogos para o filtro atual."
+        : "A base local também não encontrou jogos para o filtro atual.";
+    document.getElementById("featuredConfidence").textContent = "--";
     return;
   }
 
@@ -469,9 +514,7 @@ function saveFavoriteToSupabase(matchId) {
           league: match.league,
           market: match.market,
         },
-        {
-          onConflict: "user_id,match_id",
-        },
+        { onConflict: "user_id,match_id" },
       )
       .then(({ error }) => {
         if (error) {
@@ -720,7 +763,7 @@ function renderMatchDetails(match) {
               <li><strong>Mercado:</strong> ${match.market}</li>
               <li><strong>Confiança:</strong> ${match.confidence}%</li>
               <li><strong>BTTS:</strong> ${match.bttsRate}</li>
-              <li><strong>Origem dos dados:</strong> ${state.usingLiveApi ? "API ao vivo" : "Modo demo"}</li>
+              <li><strong>Origem dos dados:</strong> ${state.usingLiveApi ? "API ao vivo" : "Modo local de segurança"}</li>
             </ul>
           </div>
 
@@ -749,7 +792,7 @@ function renderOverview(matches) {
     matchesGrid.innerHTML = `
       <div class="empty-state">
         <h3>Carregando partidas...</h3>
-        <p>Aguarde enquanto buscamos os jogos.</p>
+        <p>Estamos atualizando os jogos do filtro selecionado.</p>
       </div>
     `;
     return;
@@ -758,8 +801,8 @@ function renderOverview(matches) {
   if (!matches.length) {
     matchesGrid.innerHTML = `
       <div class="empty-state">
-        <h3>Nenhum resultado encontrado</h3>
-        <p>Tente trocar o filtro ou pesquisar outro nome.</p>
+        <h3>Nenhuma partida disponível</h3>
+        <p>${state.usingLiveApi ? "A API está ativa, mas não trouxe jogos para este filtro." : "A base local também não encontrou jogos para este filtro."}</p>
       </div>
     `;
     return;
@@ -773,7 +816,9 @@ function renderOverview(matches) {
 function renderPartidas(matches) {
   document.getElementById("featuredTitle").textContent = "Todas as partidas";
   document.getElementById("featuredDescription").textContent =
-    "Lista completa das partidas disponíveis no filtro atual.";
+    state.usingLiveApi
+      ? `Partidas carregadas com sucesso. Última atualização: ${state.lastUpdateLabel}.`
+      : "Lista baseada no modo de segurança local.";
   document.getElementById("featuredConfidence").textContent =
     `${matches.length}`;
 
@@ -792,7 +837,7 @@ function renderTendencias() {
 
   document.getElementById("featuredTitle").textContent = "Tendências do dia";
   document.getElementById("featuredDescription").textContent =
-    "Jogos ordenados pelas maiores confianças.";
+    "Jogos ordenados pelas maiores leituras de confiança.";
   document.getElementById("featuredConfidence").textContent =
     `${trendMatches[0]?.confidence || 0}%`;
 
@@ -811,7 +856,7 @@ function renderFavoritos() {
 
   document.getElementById("featuredTitle").textContent = "Seus favoritos";
   document.getElementById("featuredDescription").textContent =
-    "Jogos que você marcou para acompanhar depois.";
+    "Jogos salvos para acompanhamento rápido.";
   document.getElementById("featuredConfidence").textContent =
     `${favoriteMatches.length}`;
 
@@ -826,13 +871,13 @@ function renderFavoritos() {
 }
 
 function renderConfiguracoes() {
-  const apiStatus = state.usingLiveApi ? "Conectada" : "Não conectada";
+  const apiStatus = state.usingLiveApi ? "Conectada" : "Fallback local";
   const supabaseStatus = sbClient ? "Conectado" : "Não configurado";
 
   document.getElementById("featuredTitle").textContent =
     "Configurações do sistema";
   document.getElementById("featuredDescription").textContent =
-    "Resumo técnico da conexão atual.";
+    "Painel técnico e operacional da aplicação.";
   document.getElementById("featuredConfidence").textContent = "OK";
 
   matchesGrid.innerHTML = `
@@ -840,11 +885,14 @@ function renderConfiguracoes() {
       <h3>Status atual</h3>
       <p><strong>Supabase:</strong> ${supabaseStatus}</p>
       <p><strong>API Futebol:</strong> ${apiStatus}</p>
+      <p><strong>Mensagem da API:</strong> ${state.lastApiMessage}</p>
+      <p><strong>Última atualização:</strong> ${state.lastUpdateLabel}</p>
       <p><strong>Timezone:</strong> ${FOOTBALL_TIMEZONE}</p>
       <p><strong>Filtro atual:</strong> ${state.filter}</p>
       <p><strong>Modo atual:</strong> ${state.mode}</p>
-      <p><strong>Partidas carregadas:</strong> ${state.matches.length || demoMatches.length}</p>
+      <p><strong>Partidas carregadas:</strong> ${state.matches.length || 0}</p>
       <p><strong>Favoritos sincronizados:</strong> ${state.favorites.length}</p>
+      ${state.lastError ? `<p><strong>Último erro:</strong> ${state.lastError}</p>` : ""}
     </div>
   `;
 }
@@ -852,7 +900,6 @@ function renderConfiguracoes() {
 function updateSidebarActive() {
   sidebarButtons.forEach((button) => {
     const section = button.textContent.trim().toLowerCase();
-
     button.classList.remove("active");
 
     if (
@@ -888,29 +935,11 @@ function renderDashboard() {
   renderStats(matches);
   renderFeatured(matches);
 
-  if (state.currentSection === "overview") {
-    renderOverview(matches);
-    return;
-  }
-
-  if (state.currentSection === "matches") {
-    renderPartidas(matches);
-    return;
-  }
-
-  if (state.currentSection === "trends") {
-    renderTendencias();
-    return;
-  }
-
-  if (state.currentSection === "favorites") {
-    renderFavoritos();
-    return;
-  }
-
-  if (state.currentSection === "settings") {
-    renderConfiguracoes();
-  }
+  if (state.currentSection === "overview") return renderOverview(matches);
+  if (state.currentSection === "matches") return renderPartidas(matches);
+  if (state.currentSection === "trends") return renderTendencias();
+  if (state.currentSection === "favorites") return renderFavoritos();
+  if (state.currentSection === "settings") return renderConfiguracoes();
 }
 
 function loginWithSupabase(email, password) {
@@ -923,10 +952,7 @@ function loginWithSupabase(email, password) {
   }
 
   return sbClient.auth
-    .signInWithPassword({
-      email,
-      password,
-    })
+    .signInWithPassword({ email, password })
     .then(({ error }) => {
       if (error) {
         setMessage(`Erro no login: ${error.message}`, "error");
@@ -948,21 +974,16 @@ function signUpWithSupabase(email, password) {
     return Promise.resolve();
   }
 
-  return sbClient.auth
-    .signUp({
-      email,
-      password,
-    })
-    .then(({ error }) => {
-      if (error) {
-        setMessage(`Erro ao criar conta: ${error.message}`, "error");
-        return;
-      }
+  return sbClient.auth.signUp({ email, password }).then(({ error }) => {
+    if (error) {
+      setMessage(`Erro ao criar conta: ${error.message}`, "error");
+      return;
+    }
 
-      setMessage(
-        "Conta criada com sucesso. Se o Supabase pedir confirmação por e-mail, confirme antes de entrar.",
-      );
-    });
+    setMessage(
+      "Conta criada com sucesso. Se o Supabase pedir confirmação por e-mail, confirme antes de entrar.",
+    );
+  });
 }
 
 function logoutSupabaseIfNeeded() {
