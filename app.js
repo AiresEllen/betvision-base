@@ -102,8 +102,47 @@ function setLoggedIn(value) {
   localStorage.setItem("bv_logged", value ? "true" : "false");
 }
 
-function saveFavorites() {
+function saveFavoritesLocal() {
   localStorage.setItem("bv_favorites", JSON.stringify(state.favorites));
+}
+
+async function getCurrentUser() {
+  if (!sbClient) return null;
+
+  const {
+    data: { user },
+  } = await sbClient.auth.getUser();
+
+  return user || null;
+}
+
+async function loadFavoritesFromSupabase() {
+  if (!sbClient) return false;
+
+  const user = await getCurrentUser();
+  if (!user) return false;
+
+  const { data, error } = await sbClient
+    .from("favorites")
+    .select("match_id")
+    .eq("user_id", user.id);
+
+  if (error) {
+    console.error("Erro ao carregar favoritos:", error);
+    return false;
+  }
+
+  state.favorites = (data || []).map((item) => item.match_id);
+  saveFavoritesLocal();
+  return true;
+}
+
+async function syncFavoritesAfterLogin() {
+  const loaded = await loadFavoritesFromSupabase();
+
+  if (!loaded) {
+    saveFavoritesLocal();
+  }
 }
 
 function setMode(mode) {
@@ -130,14 +169,14 @@ function setMode(mode) {
   }
 }
 
-function showScreen(logged) {
+async function showScreen(logged) {
   loginScreen.classList.toggle("active", !logged);
   dashboardScreen.classList.toggle("active", logged);
 
   if (logged) {
-    refreshMatches().finally(() => {
-      renderDashboard();
-    });
+    await refreshMatches();
+    await syncFavoritesAfterLogin();
+    renderDashboard();
   }
 }
 
@@ -419,15 +458,72 @@ function renderFeatured(matches) {
     `${featured.confidence}%`;
 }
 
-function toggleFavorite(matchId) {
-  if (state.favorites.includes(matchId)) {
-    state.favorites = state.favorites.filter((id) => id !== matchId);
-  } else {
-    state.favorites.push(matchId);
+async function saveFavoriteToSupabase(matchId) {
+  if (!sbClient) return false;
+
+  const user = await getCurrentUser();
+  if (!user) return false;
+
+  const match = getAllMatches().find((item) => item.id === matchId);
+  if (!match) return false;
+
+  const { error } = await sbClient.from("favorites").upsert(
+    {
+      user_id: user.id,
+      match_id: match.id,
+      home_team: match.home,
+      away_team: match.away,
+      league: match.league,
+      market: match.market,
+    },
+    {
+      onConflict: "user_id,match_id",
+    },
+  );
+
+  if (error) {
+    console.error("Erro ao salvar favorito:", error);
+    return false;
   }
 
-  saveFavorites();
+  return true;
+}
+
+async function removeFavoriteFromSupabase(matchId) {
+  if (!sbClient) return false;
+
+  const user = await getCurrentUser();
+  if (!user) return false;
+
+  const { error } = await sbClient
+    .from("favorites")
+    .delete()
+    .eq("user_id", user.id)
+    .eq("match_id", matchId);
+
+  if (error) {
+    console.error("Erro ao remover favorito:", error);
+    return false;
+  }
+
+  return true;
+}
+
+async function toggleFavorite(matchId) {
+  const alreadyFavorite = state.favorites.includes(matchId);
+
+  if (alreadyFavorite) {
+    state.favorites = state.favorites.filter((id) => id !== matchId);
+    saveFavoritesLocal();
+    renderDashboard();
+    await removeFavoriteFromSupabase(matchId);
+    return;
+  }
+
+  state.favorites.push(matchId);
+  saveFavoritesLocal();
   renderDashboard();
+  await saveFavoriteToSupabase(matchId);
 }
 
 window.toggleFavorite = toggleFavorite;
@@ -547,18 +643,8 @@ function renderMatchDetails(match) {
     `${match.confidence}%`;
 
   matchesGrid.innerHTML = `
-    <section style="
-      display:flex;
-      flex-direction:column;
-      gap:20px;
-    ">
-      <div style="
-        background:rgba(10,24,46,0.92);
-        border:1px solid rgba(126,147,255,0.14);
-        border-radius:28px;
-        padding:24px;
-        box-shadow:0 24px 60px rgba(0,0,0,0.28);
-      ">
+    <section style="display:flex; flex-direction:column; gap:20px;">
+      <div style="background:rgba(10,24,46,0.92); border:1px solid rgba(126,147,255,0.14); border-radius:28px; padding:24px; box-shadow:0 24px 60px rgba(0,0,0,0.28);">
         <div style="display:flex; justify-content:space-between; gap:18px; align-items:flex-start; flex-wrap:wrap;">
           <div style="min-width:0;">
             <div style="font-size:12px; text-transform:uppercase; letter-spacing:0.12em; color:#66c7ff; font-weight:800;">Análise detalhada</div>
@@ -569,30 +655,14 @@ function renderMatchDetails(match) {
           <div style="display:flex; gap:10px; flex-wrap:wrap;">
             <button
               onclick="backToDashboard()"
-              style="
-                border:none;
-                border-radius:16px;
-                padding:13px 18px;
-                cursor:pointer;
-                background:rgba(255,255,255,0.08);
-                color:#fff;
-                font-weight:700;
-              "
+              style="border:none; border-radius:16px; padding:13px 18px; cursor:pointer; background:rgba(255,255,255,0.08); color:#fff; font-weight:700;"
             >
               ← Voltar ao painel
             </button>
 
             <button
               onclick="toggleFavorite('${match.id}')"
-              style="
-                border:none;
-                border-radius:16px;
-                padding:13px 18px;
-                cursor:pointer;
-                background:${isFavorite ? "linear-gradient(135deg,#5db0ff,#7c6dff)" : "rgba(255,255,255,0.08)"};
-                color:#fff;
-                font-weight:700;
-              "
+              style="border:none; border-radius:16px; padding:13px 18px; cursor:pointer; background:${isFavorite ? "linear-gradient(135deg,#5db0ff,#7c6dff)" : "rgba(255,255,255,0.08)"}; color:#fff; font-weight:700;"
             >
               ${isFavorite ? "★ Favorito salvo" : "☆ Salvar favorito"}
             </button>
@@ -600,52 +670,35 @@ function renderMatchDetails(match) {
         </div>
       </div>
 
-      <div style="
-        display:grid;
-        grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
-        gap:16px;
-      ">
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:16px;">
         <div style="padding:20px; border-radius:22px; background:rgba(16,29,56,0.9); border:1px solid rgba(126,147,255,0.12);">
           <div style="color:#8ea4cf; font-size:13px;">Mercado sugerido</div>
           <div style="font-size:24px; font-weight:800; margin-top:10px; line-height:1.2;">${match.market}</div>
         </div>
-
         <div style="padding:20px; border-radius:22px; background:rgba(16,29,56,0.9); border:1px solid rgba(126,147,255,0.12);">
           <div style="color:#8ea4cf; font-size:13px;">Confiança</div>
           <div style="font-size:24px; font-weight:800; margin-top:10px;">${match.confidence}%</div>
         </div>
-
         <div style="padding:20px; border-radius:22px; background:rgba(16,29,56,0.9); border:1px solid rgba(126,147,255,0.12);">
           <div style="color:#8ea4cf; font-size:13px;">Risco</div>
           <div style="font-size:24px; font-weight:800; margin-top:10px;">${riskLevel}</div>
         </div>
-
         <div style="padding:20px; border-radius:22px; background:rgba(16,29,56,0.9); border:1px solid rgba(126,147,255,0.12);">
           <div style="color:#8ea4cf; font-size:13px;">Média de gols</div>
           <div style="font-size:24px; font-weight:800; margin-top:10px;">${match.goalsAvg}</div>
         </div>
-
         <div style="padding:20px; border-radius:22px; background:rgba(16,29,56,0.9); border:1px solid rgba(126,147,255,0.12);">
           <div style="color:#8ea4cf; font-size:13px;">Escanteios</div>
           <div style="font-size:24px; font-weight:800; margin-top:10px;">${match.cornersAvg}</div>
         </div>
-
         <div style="padding:20px; border-radius:22px; background:rgba(16,29,56,0.9); border:1px solid rgba(126,147,255,0.12);">
           <div style="color:#8ea4cf; font-size:13px;">BTTS</div>
           <div style="font-size:24px; font-weight:800; margin-top:10px;">${match.bttsRate}</div>
         </div>
       </div>
 
-      <div style="
-        display:grid;
-        grid-template-columns:1.2fr 0.95fr;
-        gap:18px;
-      " class="detail-grid-responsive">
-        <div style="
-          display:flex;
-          flex-direction:column;
-          gap:18px;
-        ">
+      <div style="display:grid; grid-template-columns:1.2fr 0.95fr; gap:18px;" class="detail-grid-responsive">
+        <div style="display:flex; flex-direction:column; gap:18px;">
           <div style="padding:22px; border-radius:24px; background:rgba(12,25,47,0.94); border:1px solid rgba(126,147,255,0.12);">
             <div style="font-size:12px; text-transform:uppercase; letter-spacing:0.12em; color:#66c7ff; font-weight:800;">Leitura principal</div>
             <h3 style="margin:12px 0 10px; font-size:24px;">Tendência do confronto</h3>
@@ -666,11 +719,7 @@ function renderMatchDetails(match) {
           </div>
         </div>
 
-        <div style="
-          display:flex;
-          flex-direction:column;
-          gap:18px;
-        ">
+        <div style="display:flex; flex-direction:column; gap:18px;">
           <div style="padding:22px; border-radius:24px; background:rgba(12,25,47,0.94); border:1px solid rgba(126,147,255,0.12);">
             <div style="font-size:12px; text-transform:uppercase; letter-spacing:0.12em; color:#66c7ff; font-weight:800;">Resumo executivo</div>
             <ul style="margin:14px 0 0; padding-left:18px; color:#d3def5; line-height:1.95;">
@@ -804,6 +853,7 @@ function renderConfiguracoes() {
       <p><strong>Filtro atual:</strong> ${state.filter}</p>
       <p><strong>Modo atual:</strong> ${state.mode}</p>
       <p><strong>Partidas carregadas:</strong> ${state.matches.length || demoMatches.length}</p>
+      <p><strong>Favoritos sincronizados:</strong> ${state.favorites.length}</p>
     </div>
   `;
 }
@@ -829,10 +879,7 @@ function updateSidebarActive() {
 function setDashboardLayoutForDetails(isDetail) {
   if (statsGrid) statsGrid.style.display = isDetail ? "none" : "";
   if (sectionTitleRow) sectionTitleRow.style.display = isDetail ? "none" : "";
-
-  if (featuredPanel) {
-    featuredPanel.style.marginBottom = isDetail ? "18px" : "";
-  }
+  if (featuredPanel) featuredPanel.style.marginBottom = isDetail ? "18px" : "";
 }
 
 function renderDashboard() {
@@ -896,7 +943,7 @@ async function loginWithSupabase(email, password) {
 
   setMode("supabase");
   setLoggedIn(true);
-  showScreen(true);
+  await showScreen(true);
 }
 
 async function signUpWithSupabase(email, password) {
@@ -959,14 +1006,14 @@ demoLogin.addEventListener("click", async () => {
   setMode("demo");
   setLoggedIn(true);
   setMessage("Você entrou em modo demo.");
-  showScreen(true);
+  await showScreen(true);
 });
 
 logoutBtn.addEventListener("click", async () => {
   setLoggedIn(false);
   state.selectedMatchId = null;
   await logoutSupabaseIfNeeded();
-  showScreen(false);
+  await showScreen(false);
 });
 
 filterButtons.forEach((button) => {
@@ -1004,7 +1051,7 @@ searchInput.addEventListener("input", (event) => {
 async function bootstrapAuth() {
   if (!sbClient) {
     setMode("demo");
-    showScreen(isLoggedIn());
+    await showScreen(isLoggedIn());
     return;
   }
 
@@ -1015,10 +1062,10 @@ async function bootstrapAuth() {
   if (session?.user) {
     setMode("supabase");
     setLoggedIn(true);
-    showScreen(true);
+    await showScreen(true);
   } else {
     setMode("demo");
-    showScreen(isLoggedIn());
+    await showScreen(isLoggedIn());
   }
 }
 
