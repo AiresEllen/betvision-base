@@ -50,9 +50,8 @@ const APP_CONFIG = window.APP_CONFIG || {};
 
 const SUPABASE_URL = APP_CONFIG.SUPABASE_URL || "";
 const SUPABASE_ANON_KEY = APP_CONFIG.SUPABASE_ANON_KEY || "";
-const FOOTBALL_API_BASE_URL = APP_CONFIG.FOOTBALL_API_BASE_URL || "";
-const FOOTBALL_API_KEY = APP_CONFIG.FOOTBALL_API_KEY || "";
 const FOOTBALL_TIMEZONE = APP_CONFIG.FOOTBALL_TIMEZONE || "America/Sao_Paulo";
+const FOOTBALL_FUNCTION_URL = "/.netlify/functions/fixtures";
 
 const sbClient =
   window.supabase && SUPABASE_URL && SUPABASE_ANON_KEY
@@ -339,20 +338,14 @@ function mapFixtureToMatch(fixtureData, currentFilter) {
 }
 
 async function fetchLiveMatches() {
-  if (!FOOTBALL_API_BASE_URL || !FOOTBALL_API_KEY) {
-    throw new Error("API não configurada no config.js");
-  }
-
   const date = getApiDateByFilter(state.filter);
-  const url = new URL(`${FOOTBALL_API_BASE_URL}/fixtures`);
+
+  const url = new URL("/.netlify/functions/fixtures", window.location.origin);
   url.searchParams.set("date", date);
   url.searchParams.set("timezone", FOOTBALL_TIMEZONE);
 
   const response = await fetch(url.toString(), {
     method: "GET",
-    headers: {
-      "x-apisports-key": FOOTBALL_API_KEY,
-    },
   });
 
   if (!response.ok) {
@@ -364,6 +357,15 @@ async function fetchLiveMatches() {
 
   return fixtures.map((item) => mapFixtureToMatch(item, state.filter));
 }
+
+if (!response.ok) {
+  throw new Error(`Erro da API: ${response.status}`);
+}
+
+const data = await response.json();
+const fixtures = Array.isArray(data.response) ? data.response : [];
+
+return fixtures.map((item) => mapFixtureToMatch(item, state.filter));
 
 async function refreshMatches() {
   state.loadingMatches = true;
