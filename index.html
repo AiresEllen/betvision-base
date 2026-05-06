@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BetVision Premium</title>
+    <meta name="description" content="Painel premium de partidas, tendências e análises de futebol." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="toast" class="toast hidden"></div>
+
+    <section id="loginScreen" class="login-screen active">
+      <div class="login-hero glass">
+        <span class="eyebrow">BETVISION PREMIUM</span>
+        <h1>Análises de futebol com visual profissional.</h1>
+        <p>Partidas, tendências, favoritos e filtros em um painel pronto para Netlify.</p>
+        <div class="login-stats">
+          <div><strong>Live</strong><span>API-Football</span></div>
+          <div><strong>100%</strong><span>Responsivo</span></div>
+          <div><strong>Pro</strong><span>Supabase Auth</span></div>
+        </div>
+      </div>
+
+      <div class="login-card glass">
+        <div class="brand-mini"><div class="logo">BV</div><div><h2>Entrar no painel</h2><p>Use seu login ou entre em modo demo.</p></div></div>
+        <form id="loginForm" class="form">
+          <label>E-mail<input id="email" type="email" placeholder="seu@email.com" autocomplete="email" required /></label>
+          <label>Senha<input id="password" type="password" placeholder="••••••••" autocomplete="current-password" required /></label>
+          <button class="btn primary" type="submit">Entrar</button>
+          <button class="btn secondary" id="demoLogin" type="button">Entrar em modo demo</button>
+        </form>
+        <p id="loginMessage" class="note">Projeto pronto para uso e publicação.</p>
+      </div>
+    </section>
+
+    <section id="appScreen" class="app-screen">
+      <aside class="sidebar glass">
+        <div>
+          <div class="brand"><div class="logo">BV</div><div><strong>BetVision</strong><small id="modeLabel">Premium</small></div></div>
+          <nav class="nav">
+            <button class="nav-item active" data-section="overview">Visão geral</button>
+            <button class="nav-item" data-section="matches">Partidas</button>
+            <button class="nav-item" data-section="trends">Tendências</button>
+            <button class="nav-item" data-section="favorites">Favoritos</button>
+            <button class="nav-item" data-section="settings">Configurações</button>
+          </nav>
+        </div>
+        <button id="logoutBtn" class="btn secondary full">Sair</button>
+      </aside>
+
+      <main class="main">
+        <header class="topbar glass">
+          <div><span class="eyebrow">PAINEL DO DIA</span><h1 id="pageTitle">Visão geral</h1></div>
+          <div class="filters">
+            <span id="dataSourceBadge" class="source-badge neutral">Carregando dados</span>
+            <button class="chip active" data-filter="today">Hoje</button>
+            <button class="chip" data-filter="tomorrow">Amanhã</button>
+            <button class="chip" data-filter="week">Semana</button>
+            <button id="refreshBtn" class="chip">Atualizar</button>
+          </div>
+        </header>
+
+        <section id="overview" class="section active">
+          <div class="cards-grid">
+            <article class="stat glass"><span>Partidas</span><strong id="matchesCount">0</strong><small>Jogos filtrados</small></article>
+            <article class="stat glass"><span>Maior confiança</span><strong id="bestConfidence">0%</strong><small>Oportunidade do filtro</small></article>
+            <article class="stat glass"><span>Média de gols</span><strong id="goalsAverage">0.0</strong><small>Estimativa do painel</small></article>
+            <article class="stat glass accent"><span>Modo</span><strong id="modeCardLabel">Premium</strong><small id="modeCardDescription">Login real ativo</small></article>
+          </div>
+
+          <article class="featured glass">
+            <div><span class="eyebrow">DESTAQUE</span><h2 id="featuredTitle">Carregando...</h2><p id="featuredDescription">Buscando melhor oportunidade.</p></div>
+            <div class="confidence"><span>Confiança</span><strong id="featuredConfidence">0%</strong></div>
+          </article>
+
+          <div class="section-head"><div><span class="eyebrow">LISTA DE JOGOS</span><h2>Partidas analisadas</h2></div><input id="searchInput" class="search" placeholder="Buscar time, liga ou mercado..." /></div>
+          <div id="matchesGrid" class="matches-grid"></div>
+        </section>
+
+        <section id="matches" class="section">
+          <div class="section-head"><div><span class="eyebrow">PARTIDAS</span><h2>Todos os jogos do filtro</h2></div><input id="matchesSearch" class="search" placeholder="Pesquisar partidas..." /></div>
+          <div id="matchesFullGrid" class="matches-grid"></div>
+        </section>
+
+        <section id="trends" class="section">
+          <div class="section-head"><div><span class="eyebrow">TENDÊNCIAS</span><h2>Mercados mais fortes</h2></div></div>
+          <div id="trendsGrid" class="trend-grid"></div>
+        </section>
+
+        <section id="favorites" class="section">
+          <div class="section-head"><div><span class="eyebrow">FAVORITOS</span><h2>Jogos salvos</h2></div></div>
+          <div id="favoritesGrid" class="matches-grid"></div>
+        </section>
+
+        <section id="settings" class="section">
+          <div class="settings glass">
+            <h2>Configurações</h2>
+            <p><strong>API:</strong> use a variável <code>API_FOOTBALL_KEY</code> no Netlify.</p>
+            <p><strong>Supabase:</strong> configure <code>config.js</code> com URL e Anon Key.</p>
+            <p><strong>Keep Alive:</strong> use <code>/.netlify/functions/ping</code> no UptimeRobot.</p>
+            <button id="clearFavorites" class="btn secondary">Limpar favoritos</button>
+          </div>
+        </section>
+      </main>
+    </section>
+
+    <div id="analysisModal" class="modal hidden">
+      <div class="modal-card glass">
+        <button id="closeAnalysis" class="modal-close" type="button">×</button>
+        <div id="analysisContent"></div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="config.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
